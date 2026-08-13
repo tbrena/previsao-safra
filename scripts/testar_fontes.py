@@ -34,10 +34,10 @@ def testar_sentinel2():
 
 
 def testar_iea():
-    if not config.CAMINHO_IEA_EDR.exists():
-        print(f"[PULADO] arquivo não encontrado: {config.CAMINHO_IEA_EDR}")
+    if not config.PASTA_IEA.exists() or not any(config.PASTA_IEA.glob("*.xlsx")):
+        print(f"[PULADO] nenhum export em: {config.PASTA_IEA}")
         return
-    cafe = iea.cafe_edr(config.CAMINHO_IEA_EDR)
+    cafe = iea.cafe_edr(config.PASTA_IEA)
     print(f"EDRs: {cafe['edr'].nunique()} | anos: {cafe['ano'].min()}–{cafe['ano'].max()}")
     sp = cafe.groupby("ano")[["area_producao_ha", "producao_sc60"]].sum()
     sp["rendimento_kg_ha"] = (sp["producao_sc60"] * 60 / sp["area_producao_ha"]).round(0)

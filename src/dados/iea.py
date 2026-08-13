@@ -21,11 +21,34 @@ KG_POR_SACA = 60.0
 
 
 def carregar(caminho: str | Path) -> pd.DataFrame:
-    """Planilha completa em formato tidy.
+    """Um ou mais exports em formato tidy.
+
+    ``caminho`` pode ser um .xlsx, uma pasta (lê todos os .xlsx dela) ou uma
+    lista de arquivos. Períodos sobrepostos são deduplicados (vence o arquivo
+    lido por último, em ordem alfabética de nome).
 
     Colunas: produto, edr, ano, caracteristica, valor, unidade — uma linha por
     característica preenchida. Rodapé e linhas sem ano são descartados.
     """
+    tidy = pd.concat([_carregar_um(c) for c in _resolver(caminho)], ignore_index=True)
+    return tidy.drop_duplicates(
+        subset=["produto", "edr", "ano", "caracteristica"], keep="last"
+    ).reset_index(drop=True)
+
+
+def _resolver(caminho) -> list[Path]:
+    if isinstance(caminho, (list, tuple)):
+        return [Path(c) for c in caminho]
+    caminho = Path(caminho)
+    if caminho.is_dir():
+        arquivos = sorted(caminho.glob("*.xlsx"))
+        if not arquivos:
+            raise FileNotFoundError(f"Nenhum .xlsx em {caminho}")
+        return arquivos
+    return [caminho]
+
+
+def _carregar_um(caminho: Path) -> pd.DataFrame:
     bruto = pd.read_excel(caminho, skiprows=5)
     bruto = bruto.dropna(subset=["Ano"])
     partes = []

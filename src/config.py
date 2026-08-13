@@ -50,4 +50,5 @@ AOI_GUAXUPE = (-46.76, -21.36, -46.68, -21.28)
 
 # Dados locais
 RAIZ = Path(__file__).resolve().parents[1]
-CAMINHO_IEA_EDR = RAIZ / "data" / "raw" / "iea" / "estatisticas_producao_paulista_edr_2020-2025.xlsx"
+# Pasta com os exports do banco IEA (todos os .xlsx são lidos e consolidados)
+PASTA_IEA = RAIZ / "data" / "raw" / "iea"
