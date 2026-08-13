@@ -2,6 +2,7 @@
 
 Códigos IBGE verificados na API de localidades em 12/08/2026.
 """
+from pathlib import Path
 
 # Municípios cafeeiros de referência (código IBGE -> nome)
 MUNICIPIOS_CAFE = {
@@ -46,3 +47,7 @@ CAFE_CANEPHORA = "31620" # desagregado a partir de 2012
 # Área de exemplo para NDVI: zona cafeeira em torno de Guaxupé/MG
 # bbox = (oeste, sul, leste, norte), graus decimais WGS84
 AOI_GUAXUPE = (-46.76, -21.36, -46.68, -21.28)
+
+# Dados locais
+RAIZ = Path(__file__).resolve().parents[1]
+CAMINHO_IEA_EDR = RAIZ / "data" / "raw" / "iea" / "estatisticas_producao_paulista_edr_2020-2025.xlsx"

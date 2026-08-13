@@ -35,6 +35,7 @@ Testadas em 12/08/2026. "Sem cadastro" = funciona direto, sem criar conta.
 | CHIRPS | chuva de alta qualidade desde 1981 | ~5 km | download aberto |
 | CONAB | 4 levantamentos de café/ano, séries por UF | UF | planilhas abertas |
 | MapBiomas | **máscara de onde há café** (classe 46), soja, cana etc. | 30 m, anual | download / Earth Engine |
+| **IEA/CATI — SAAESP** | levantamentos de SP por EDR: área nova, área em produção, produção (~90 produtos, café incluso) — **inclui o ano corrente**, antes do IBGE | EDR/ano | export do banco IEA (temos 2020–2025 em `data/raw/iea/`) ✅ |
 
 Para séries NDVI municipais completas em escala (todos os municípios, 20+ anos),
 os caminhos práticos são **Google Earth Engine** (gratuito p/ uso não comercial,
@@ -58,7 +59,8 @@ previsao-safra/
 │   └── dados/
 │       ├── sidra.py       # rendimento oficial (IBGE PAM, tabela 1613)
 │       ├── power.py       # clima diário (NASA POWER)
-│       └── satelite.py    # cenas Sentinel-2 + NDVI via STAC/COG
+│       ├── satelite.py    # cenas Sentinel-2 + NDVI via STAC/COG
+│       └── iea.py         # Estatísticas da Produção Paulista (IEA/CATI, por EDR)
 ├── scripts/
 │   └── testar_fontes.py   # teste de fumaça das 3 fontes
 ├── notebooks/             # análises exploratórias
@@ -76,6 +78,8 @@ python -m venv .venv
 ## Roadmap
 
 - [x] Coleta validada: IBGE SIDRA, NASA POWER, Sentinel-2 (STAC, leitura em janela)
+- [x] IEA/CATI por EDR integrado (café 2020–2025; área nova como indicador antecedente)
+- [ ] Exportar série IEA mais longa (idealmente 1990+) e/ou por município
 - [ ] Máscara de café por município (MapBiomas classe 46)
 - [ ] Série NDVI municipal 2000–2025 (MODIS/GEE) restrita à máscara de café
 - [ ] Dataset municipal: features (NDVI, clima por janela fenológica, bienalidade) × ano

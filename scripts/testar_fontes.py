@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import config
-from src.dados import power, satelite, sidra
+from src.dados import iea, power, satelite, sidra
 
 
 def testar_sidra():
@@ -33,12 +33,25 @@ def testar_sentinel2():
     print(serie.to_string(index=False))
 
 
+def testar_iea():
+    if not config.CAMINHO_IEA_EDR.exists():
+        print(f"[PULADO] arquivo não encontrado: {config.CAMINHO_IEA_EDR}")
+        return
+    cafe = iea.cafe_edr(config.CAMINHO_IEA_EDR)
+    print(f"EDRs: {cafe['edr'].nunique()} | anos: {cafe['ano'].min()}–{cafe['ano'].max()}")
+    sp = cafe.groupby("ano")[["area_producao_ha", "producao_sc60"]].sum()
+    sp["rendimento_kg_ha"] = (sp["producao_sc60"] * 60 / sp["area_producao_ha"]).round(0)
+    print("Estado de SP (soma dos EDRs):")
+    print(sp.to_string())
+
+
 def principal():
     ok = True
     testes = [
         ("IBGE SIDRA — rendimento de café (PAM t1613)", testar_sidra),
         ("NASA POWER — clima diário", testar_power),
         ("Sentinel-2 via STAC — NDVI Guaxupé/MG", testar_sentinel2),
+        ("IEA/CATI — café por EDR (arquivo local)", testar_iea),
     ]
     for nome, funcao in testes:
         print(f"\n=== {nome} ===")
