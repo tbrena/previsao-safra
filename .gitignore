@@ -1,0 +1,36 @@
+# Ambiente / segredos
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+
+# Sistema operacional
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Editores / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs e temporários
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Dados grandes / saídas
+data/raw/
+data/interim/
+output/
+dist/
+build/
