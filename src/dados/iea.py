@@ -160,20 +160,20 @@ def preco_atacado(caminho: str | Path) -> pd.DataFrame:
     return tidy[colunas].sort_values(["produto", "data"]).reset_index(drop=True)
 
 
-def salarios_rurais(caminho: str | Path) -> pd.DataFrame:
-    """Salários rurais por categoria/EDR (levantamentos de abril e novembro).
+def _estatisticas_edr(caminho: str | Path, rotulo_produto: str) -> pd.DataFrame:
+    """Parser comum dos levantamentos com estatísticas por EDR.
 
-    Colunas: categoria (Administrador, Capataz, Diarista a seco, Mensalista,
-    Tratorista, Volante), edr, ano, mes, data, menor, maior, medio, moda,
-    mediana, informantes, municipios, edr_chave. Série desde 1992, em R$.
-    Aceita arquivo, pasta ou lista.
+    Formato compartilhado por Salários Rurais e Pagamento de Colheita:
+    Produto | Unidade | Região | Ano | Mês | Menor | Maior | Médio | Moda |
+    Mediana | Nº de Informantes | Nº de Municípios.
     """
     quadros = []
     for arquivo in _resolver(caminho):
         df = pd.read_excel(arquivo, skiprows=5)
         df = df.dropna(subset=["Ano"]).rename(
             columns={
-                "Produto": "categoria",
+                "Produto": rotulo_produto,
+                "Unidade": "unidade",
                 "Região": "edr",
                 "Ano": "ano",
                 "Mês": "mes",
@@ -188,21 +188,46 @@ def salarios_rurais(caminho: str | Path) -> pd.DataFrame:
         )
         quadros.append(df)
     tidy = pd.concat(quadros, ignore_index=True)
-    tidy["categoria"] = tidy["categoria"].str.strip()
+    tidy[rotulo_produto] = tidy[rotulo_produto].str.strip()
     tidy["ano"] = tidy["ano"].astype(int)
     tidy["mes"] = tidy["mes"].astype(int)
     for coluna in ("menor", "maior", "medio", "moda", "mediana"):
         tidy[coluna] = pd.to_numeric(tidy[coluna], errors="coerce")
-    tidy = tidy.drop_duplicates(subset=["categoria", "edr", "ano", "mes"], keep="last")
+    tidy = tidy.drop_duplicates(subset=[rotulo_produto, "edr", "ano", "mes"], keep="last")
     tidy["data"] = pd.to_datetime({"year": tidy["ano"], "month": tidy["mes"], "day": 1})
     tidy["edr_chave"] = tidy["edr"].map(chave_regiao)
     colunas = [
-        "categoria", "edr", "edr_chave", "ano", "mes", "data",
+        rotulo_produto, "unidade", "edr", "edr_chave", "ano", "mes", "data",
         "menor", "maior", "medio", "moda", "mediana", "informantes", "municipios",
     ]
     return tidy[[c for c in colunas if c in tidy.columns]].sort_values(
-        ["categoria", "edr", "data"]
+        [rotulo_produto, "edr", "data"]
     ).reset_index(drop=True)
+
+
+def salarios_rurais(caminho: str | Path) -> pd.DataFrame:
+    """Salários rurais por categoria/EDR (levantamentos de abril e novembro).
+
+    Categorias: Administrador, Capataz, Diarista a seco, Mensalista,
+    Tratorista, Volante. Série desde 1992, em R$. Aceita arquivo/pasta/lista.
+    """
+    return _estatisticas_edr(caminho, "categoria")
+
+
+def pagamento_colheita(caminho: str | Path) -> pd.DataFrame:
+    """Preço pago pela colheita por cultura/EDR (abril e junho, desde 1996).
+
+    Culturas incluem Café Cereja e Café Coco (R$/sc de 100–110 litros),
+    algodão (R$/@), cana (R$/t), citros (R$/cx.) etc. A coluna ``cultura``
+    vem sem o prefixo "Preço médio pago pela Colheita de".
+    """
+    tidy = _estatisticas_edr(caminho, "cultura")
+    tidy["cultura"] = (
+        tidy["cultura"]
+        .str.replace(r"^Preço médio pago pela Colheita de\s*", "", regex=True)
+        .str.strip()
+    )
+    return tidy
 
 
 def produto_edr(caminho: str | Path, produto: str) -> pd.DataFrame:
