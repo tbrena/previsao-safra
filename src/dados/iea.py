@@ -160,6 +160,51 @@ def preco_atacado(caminho: str | Path) -> pd.DataFrame:
     return tidy[colunas].sort_values(["produto", "data"]).reset_index(drop=True)
 
 
+def salarios_rurais(caminho: str | Path) -> pd.DataFrame:
+    """Salários rurais por categoria/EDR (levantamentos de abril e novembro).
+
+    Colunas: categoria (Administrador, Capataz, Diarista a seco, Mensalista,
+    Tratorista, Volante), edr, ano, mes, data, menor, maior, medio, moda,
+    mediana, informantes, municipios, edr_chave. Série desde 1992, em R$.
+    Aceita arquivo, pasta ou lista.
+    """
+    quadros = []
+    for arquivo in _resolver(caminho):
+        df = pd.read_excel(arquivo, skiprows=5)
+        df = df.dropna(subset=["Ano"]).rename(
+            columns={
+                "Produto": "categoria",
+                "Região": "edr",
+                "Ano": "ano",
+                "Mês": "mes",
+                "Menor": "menor",
+                "Maior": "maior",
+                "Médio": "medio",
+                "Moda": "moda",
+                "Mediana": "mediana",
+                "Número de Informantes": "informantes",
+                "Número de Municípios": "municipios",
+            }
+        )
+        quadros.append(df)
+    tidy = pd.concat(quadros, ignore_index=True)
+    tidy["categoria"] = tidy["categoria"].str.strip()
+    tidy["ano"] = tidy["ano"].astype(int)
+    tidy["mes"] = tidy["mes"].astype(int)
+    for coluna in ("menor", "maior", "medio", "moda", "mediana"):
+        tidy[coluna] = pd.to_numeric(tidy[coluna], errors="coerce")
+    tidy = tidy.drop_duplicates(subset=["categoria", "edr", "ano", "mes"], keep="last")
+    tidy["data"] = pd.to_datetime({"year": tidy["ano"], "month": tidy["mes"], "day": 1})
+    tidy["edr_chave"] = tidy["edr"].map(chave_regiao)
+    colunas = [
+        "categoria", "edr", "edr_chave", "ano", "mes", "data",
+        "menor", "maior", "medio", "moda", "mediana", "informantes", "municipios",
+    ]
+    return tidy[[c for c in colunas if c in tidy.columns]].sort_values(
+        ["categoria", "edr", "data"]
+    ).reset_index(drop=True)
+
+
 def produto_edr(caminho: str | Path, produto: str) -> pd.DataFrame:
     """Qualquer produto em formato largo (característica → coluna)."""
     tidy = carregar(caminho)
