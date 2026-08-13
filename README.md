@@ -55,15 +55,26 @@ alternativa nacional.
 ```
 previsao-safra/
 ├── src/
-│   ├── config.py          # municípios, códigos SIDRA, áreas de interesse
+│   ├── config.py          # caminhos, municípios, códigos SIDRA
+│   ├── eventos.py         # detector de geada/seca (Sistema 1)
+│   ├── dano.py            # ΔNDVI sobre o café, controle não-café (Sistema 1)
+│   ├── perda.py           # classes de dano → sacas e R$ (Sistema 1)
+│   ├── nowcast.py         # dataset EDR×ano + modelo de rendimento (Sistema 2)
 │   └── dados/
-│       ├── sidra.py       # rendimento oficial (IBGE PAM, tabela 1613)
+│       ├── iea.py         # produção/EDR, VPA, preços, salários, colheita (IEA/CATI)
+│       ├── sidra.py       # rendimento oficial municipal (IBGE PAM t1613)
 │       ├── power.py       # clima diário (NASA POWER)
-│       ├── satelite.py    # cenas Sentinel-2 + NDVI via STAC/COG
-│       └── iea.py         # Estatísticas da Produção Paulista (IEA/CATI, por EDR)
+│       ├── satelite.py    # Sentinel-2 via STAC/COG
+│       ├── mapbiomas.py   # máscara de café (classe 46) e células por EDR
+│       ├── geo.py         # shapes dos 40 EDRs CATI + 16 RAs
+│       └── util.py        # chave de junção normalizada
 ├── scripts/
-│   └── testar_fontes.py   # teste de fumaça das 3 fontes
-├── notebooks/             # análises exploratórias
+│   ├── testar_fontes.py   # teste de fumaça das fontes
+│   ├── avaliar_geada.py   # Sistema 1: clima → ΔNDVI → sacas → R$
+│   └── rodar_nowcast.py   # Sistema 2: dataset → validação LOYO → previsão
+├── app/
+│   └── painel.py          # painel Streamlit (apresentação e uso)
+├── relatorios/            # backtests e boletins versionados
 └── data/                  # raw/ e processed/ (fora do git)
 ```
 
@@ -72,20 +83,25 @@ previsao-safra/
 ```bash
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
-.venv\Scripts\python scripts\testar_fontes.py
+.venv\Scripts\python scripts\testar_fontes.py     # valida as fontes
+.venv\Scripts\python scripts\rodar_nowcast.py     # gera previsão + métricas
+.venv\Scripts\streamlit run app\painel.py         # abre o painel
+.venv\Scripts\python scripts\avaliar_geada.py     # varredura de geada (inverno)
 ```
 
 ## Roadmap
 
 - [x] Coleta validada: IBGE SIDRA, NASA POWER, Sentinel-2 (STAC, leitura em janela)
-- [x] IEA/CATI por EDR integrado (café 2020–2025; área nova como indicador antecedente)
-- [ ] Exportar série IEA mais longa (idealmente 1990+) e/ou por município
-- [ ] Máscara de café por município (MapBiomas classe 46)
-- [ ] Série NDVI municipal 2000–2025 (MODIS/GEE) restrita à máscara de café
-- [ ] Dataset municipal: features (NDVI, clima por janela fenológica, bienalidade) × ano
-- [ ] Modelo baseline + validação leave-one-year-out; comparar com CONAB
-- [ ] Previsão da safra 2026/27
-- [ ] Expandir para soja/milho/cana
+- [x] IEA/CATI integrado: produção EDR 2010–2025, municípios (QA), VPA, preços 1948+, salários, colheita
+- [x] Shapes dos 40 EDRs (CATI 2022) + chave de junção normalizada
+- [x] Máscara de café MapBiomas (683 células, ~98 mil ha) por EDR
+- [x] **Sistema 1** — resposta rápida a geada: detector calibrado (2021) + ΔNDVI com controle + sacas/R$; validado por dose-resposta e placebo (`relatorios/backtest_geada_jul2021.md`)
+- [x] **Sistema 2** — nowcast por EDR: clima fenológico + bienalidade + área + preço, validação leave-one-year-out, previsão 2026
+- [x] Painel Streamlit (previsão, séries, monitor de geada, metodologia)
+- [ ] Exportar série IEA 1983–2009 para esticar o treino
+- [ ] NDVI mensal por EDR como covariável do nowcast (GEE/MODIS)
+- [ ] Boletim mensal automatizado + comparação com levantamentos IEA/CONAB
+- [ ] Expandir para soja/milho/cana (IEA já cobre ~90 produtos)
 
 ## Licença
 
