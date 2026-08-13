@@ -56,6 +56,7 @@ PASTA_IEA_VALOR = PASTA_IEA / "valor"                # valor da produção (VPA)
 PASTA_IEA_PRECOS = PASTA_IEA / "precos"              # preços mensais de atacado
 PASTA_IEA_SALARIOS = PASTA_IEA / "salarios"          # salários rurais por EDR
 PASTA_IEA_COLHEITA = PASTA_IEA / "colheita"          # pagamento de colheita por EDR
+PASTA_IEA_RECEBIDOS = PASTA_IEA / "recebidos"        # preços recebidos pelos agricultores
 # Shapes (TopoJSON)
 CAMINHO_EDRS = RAIZ / "data" / "raw" / "shapes" / "edrs_cati_2022.topojson"
 CAMINHO_RAS = RAIZ / "data" / "raw" / "shapes" / "sp_regioes_administrativas.topojson"

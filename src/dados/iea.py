@@ -128,11 +128,13 @@ def valor_producao(caminho: str | Path) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
-def preco_atacado(caminho: str | Path) -> pd.DataFrame:
-    """Preços médios mensais de venda no atacado (município de São Paulo).
+def _precos_mensais(caminho: str | Path) -> pd.DataFrame:
+    """Parser comum dos levantamentos de preços mensais.
 
-    Colunas: produto, ano, mes, data, moeda, preco, unidade. Série desde 1966;
-    atenção à coluna ``moeda`` antes do Plano Real. Aceita arquivo/pasta/lista.
+    Formato compartilhado por "Atacado" e "Recebidos pelos Agricultores":
+    Produto | Mês | Ano | Moeda | Preço | Unidade. A coluna ``moeda`` importa
+    nas séries longas (Cr$, NCr$, Cz$, NCz$, CR$, R$) — para modelagem,
+    filtrar ``moeda == "R$"`` (jul/1994+) ou converter/deflacionar antes.
     """
     quadros = []
     for arquivo in _resolver(caminho):
@@ -149,6 +151,7 @@ def preco_atacado(caminho: str | Path) -> pd.DataFrame:
         )
         quadros.append(df)
     tidy = pd.concat(quadros, ignore_index=True)
+    tidy["produto"] = tidy["produto"].str.strip()
     tidy["ano"] = tidy["ano"].astype(int)
     tidy["mes"] = tidy["mes"].astype(int)
     tidy["preco"] = pd.to_numeric(tidy["preco"], errors="coerce")
@@ -158,6 +161,24 @@ def preco_atacado(caminho: str | Path) -> pd.DataFrame:
     )
     colunas = ["produto", "ano", "mes", "data", "moeda", "preco", "unidade"]
     return tidy[colunas].sort_values(["produto", "data"]).reset_index(drop=True)
+
+
+def preco_atacado(caminho: str | Path) -> pd.DataFrame:
+    """Preços médios mensais de venda no atacado (município de São Paulo).
+
+    Série desde 1966. Ver :func:`_precos_mensais` para o formato.
+    """
+    return _precos_mensais(caminho)
+
+
+def preco_recebido(caminho: str | Path) -> pd.DataFrame:
+    """Preços médios mensais recebidos pelos agricultores (Estado de SP).
+
+    Série desde 1948 — para café há 4 séries: "Café benef. secagem natural"
+    (1948+), "Café em coco" (1948+), "Café benef. cereja descasc." (2002+) e
+    "Café em coco renda" (1960–2021). Ver :func:`_precos_mensais`.
+    """
+    return _precos_mensais(caminho)
 
 
 def _estatisticas_edr(caminho: str | Path, rotulo_produto: str) -> pd.DataFrame:
