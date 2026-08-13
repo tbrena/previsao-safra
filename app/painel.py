@@ -83,8 +83,9 @@ st.caption(
 dados = carregar_processados()
 cafe, preco_cafe = carregar_series_iea()
 
-aba_previsao, aba_series, aba_geada, aba_metodo = st.tabs(
-    ["📈 Previsão da safra", "🗺️ Séries por EDR", "❄️ Monitor de geada", "📚 Metodologia"]
+aba_previsao, aba_entenda, aba_series, aba_geada, aba_metodo = st.tabs(
+    ["📈 Previsão da safra", "🧭 Entenda o sistema", "🗺️ Séries por EDR",
+     "❄️ Monitor de geada", "📚 Metodologia"]
 )
 
 # ---------------------------------------------------------------- aba 1
@@ -176,6 +177,98 @@ with aba_previsao:
             "anom_florada_pct": "anomalia florada (%)", "tmin_inverno_anterior": "T mín. inverno ant. (°C)",
         })
         st.dataframe(tabela, use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------------- aba entenda
+with aba_entenda:
+    st.subheader("O que este sistema faz")
+    st.markdown(
+        """
+Duas coisas, em linguagem direta:
+
+1. **Prevê a colheita de café de São Paulo, região por região, meses antes da colheita** — com margem de erro declarada.
+2. **Quando vem geada, mede o estrago em cerca de duas semanas** — meses antes dos levantamentos oficiais de campo.
+
+Tudo com dados **públicos e gratuitos**: satélite, clima e as estatísticas oficiais do IEA/CATI.
+"""
+    )
+
+    st.subheader("A ideia em um minuto ☕")
+    st.markdown(
+        """
+O cafeeiro é como um atleta que alterna **ano de esforço e ano de descanso** — carrega
+muito numa safra, descansa na seguinte (é a *bienalidade*). Então, para estimar a
+próxima colheita, o sistema pergunta o que um bom agrônomo perguntaria:
+
+| Pergunta | Onde o sistema busca a resposta |
+|---|---|
+| Em que fase do ciclo essa região está? | Histórico oficial de 16 anos (IEA) |
+| Choveu bem na **florada** (set–nov), quando a planta define quantos frutos terá? | Clima diário da NASA, região por região |
+| O inverno passado teve **geada** que machucou as plantas? | Termômetro (NASA) + fotos de satélite |
+| Quanta lavoura existe de pé? | Levantamento de área do IEA |
+| O preço está animando o produtor a investir no trato? | Série de preços do IEA (desde 1948) |
+
+O modelo aprende, nos 16 anos de histórico, **como essas respostas se combinavam com a
+colheita que de fato aconteceu** — e aplica o padrão ao ano atual.
+"""
+    )
+
+    st.subheader('Como sabemos que funciona? A "prova dos anos escondidos"')
+    st.markdown(
+        """
+Não avaliamos o modelo no dado que ele decorou — fazemos uma prova de verdade:
+
+> **Escondemos um ano inteiro** (digamos, 2015). O modelo treina com todos os outros
+> anos e tem que "adivinhar" 2015 sem nunca tê-lo visto. Corrigimos a prova e anotamos
+> o erro. **Repetimos isso para cada um dos 14 anos.**
+
+Resultado: **196 previsões às cegas**, com erro médio de **~3 sacas por hectare**
+(o rendimento típico é de ~24 sc/ha — erro na casa de 12%). E o modelo erra **menos
+que os dois chutes honestos** possíveis: "repetir o ano passado" e "repetir o último
+ano de mesma fase do ciclo". Se fosse só sorte, ele não venceria os dois, catorze anos seguidos.
+"""
+    )
+
+    st.subheader("E a geada? O caminho do alerta ao prejuízo ❄️")
+    st.markdown(
+        """
+1. **No dia**: o termômetro (dados NASA) acusa madrugada perigosa numa região cafeeira.
+2. **Duas semanas depois**: comparamos as fotos de satélite de **antes e depois**, só
+   nos pixels onde há café (mapa MapBiomas), e medimos quanto do verde queimou —
+   descontando o amarelado normal do inverno, medido nas áreas vizinhas sem café.
+3. **A conta**: % da lavoura danificada → sacas perdidas → **reais**, usando o preço
+   que o produtor recebe.
+
+Esse método foi testado na **geada histórica de julho/2021**: onde fez mais frio, o
+satélite viu mais dano (Ourinhos e Avaré, as mais frias, tiveram 3–4× mais área
+queimada que o normal); onde não gelou, não viu quase nada; e num ano **sem** geada
+(2019), o teste não acusou dano nenhum — ou seja, ele não "inventa" catástrofe.
+"""
+    )
+
+    st.subheader("O que o sistema NÃO faz (tão importante quanto)")
+    st.markdown(
+        """
+- **Não substitui o levantamento oficial** — antecipa e complementa; a palavra final é do IEA/CONAB/IBGE.
+- **Não enxerga talhão individual** — o recorte é regional (EDR); fazenda a fazenda exigiria outro desenho.
+- **Não prevê preço** — usa o preço como contexto, prever mercado é outro problema.
+- **Não acerta na mosca** — entrega número **com margem** (~3 sc/ha). Quem promete precisão absoluta em agricultura não está sendo honesto.
+"""
+    )
+
+    st.subheader("Mini-glossário")
+    st.markdown(
+        """
+| Termo | Tradução |
+|---|---|
+| **EDR** | "Região rural" oficial da CATI — SP tem 40 (Franca, Avaré, Marília…) |
+| **Saca** | 60 kg de café beneficiado — a unidade do mercado |
+| **kg/ha** | Quilos colhidos por hectare de lavoura — a produtividade |
+| **Bienalidade** | O "ano sim, ano não" natural do cafeeiro |
+| **Florada** | Set–nov: quando a chuva define quantos frutos a planta terá |
+| **NDVI** | Nota de "quão verde e vigorosa" está a vegetação, vista do espaço |
+| **Margem de erro (MAE)** | O quanto o modelo costuma errar, medido na prova dos anos escondidos |
+"""
+    )
 
 # ---------------------------------------------------------------- aba 2
 with aba_series:
