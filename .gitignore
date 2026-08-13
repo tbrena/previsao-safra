@@ -52,6 +52,7 @@ data/**
 !data/processed/nowcast_importancias.csv
 !data/processed/nowcast_dataset.csv
 !data/processed/celulas_cafe_2023.csv
+!data/processed/ndvi_edr.csv
 output/
 dist/
 build/

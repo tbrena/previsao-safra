@@ -201,7 +201,8 @@ próxima colheita, o sistema pergunta o que um bom agrônomo perguntaria:
 
 | Pergunta | Onde o sistema busca a resposta |
 |---|---|
-| Em que fase do ciclo essa região está? | Histórico oficial de 16 anos (IEA) |
+| Em que fase do ciclo essa região está? | Histórico oficial do IEA (série desde 1983) |
+| A lavoura está verde e vigorosa agora? | Fotos de satélite Sentinel-2 (desde 2017) |
 | Choveu bem na **florada** (set–nov), quando a planta define quantos frutos terá? | Clima diário da NASA, região por região |
 | O inverno passado teve **geada** que machucou as plantas? | Termômetro (NASA) + fotos de satélite |
 | Quanta lavoura existe de pé? | Levantamento de área do IEA |
@@ -371,18 +372,21 @@ with aba_metodo:
 ### Fontes (todas gratuitas)
 | Fonte | Papel |
 |---|---|
-| **IEA/CATI — SAAESP** | produção/área por EDR 2010–2025 (alvo do modelo), preços recebidos desde 1948, salários e pagamento de colheita |
-| **NASA POWER (MERRA-2)** | clima diário por EDR desde 2009 |
-| **Sentinel-2 (STAC/AWS)** | ΔNDVI de eventos sobre as áreas de café |
+| **IEA/CATI — SAAESP** | produção/área por EDR desde 1983 (alvo em kg/ha desde 2001, quando a medida passou de pés para hectares), preços desde 1948, salários e colheita |
+| **NASA POWER (MERRA-2)** | clima diário por EDR desde 2000 |
+| **Sentinel-2 (STAC/AWS)** | anomalia de NDVI nas janelas fenológicas (feature do modelo, 2017+) e ΔNDVI de eventos |
 | **MapBiomas Coleção 9** | onde está o café (classe 46, 30 m) |
 | **IBGE PAM/SIDRA** | verdade municipal independente (QA) |
 
 ### Modelo (Sistema 2 — nowcast)
-Random Forest por EDR × ano com features **conhecidas até o meio do ano da colheita**:
-clima por janela fenológica (florada set–nov, enchimento dez–mar, geada do inverno
-anterior), bienalidade (2 defasagens), área em produção e incentivo de preço.
-**Validação leave-one-year-out**: o modelo nunca vê o ano que prevê; erro comparado
-com persistência e média bienal. Faixas de incerteza = MAE por EDR da validação.
+Gradient boosting (histogramas, aceita dados ausentes) por EDR × ano com features
+**conhecidas até o meio do ano da colheita**: clima por janela fenológica (florada
+set–nov, enchimento dez–mar, geada do inverno anterior), bienalidade (defasagens e
+**âncora bienal** — média das últimas 4 safras de mesma fase, escolhida por vencer o
+baseline nos testes), área em produção, incentivo de preço e **anomalia de NDVI** da
+zona cafeeira mais densa de cada EDR (Sentinel-2, 2017+; ausente antes — o modelo lida).
+**Validação leave-one-year-out** desde 2001: o modelo nunca vê o ano que prevê; erro
+comparado com persistência e média bienal. Faixas de incerteza = MAE por EDR.
 
 ### Sistema 1 — resposta rápida a eventos
 Detecção de geada no dia (limiar 6 °C na célula ~50 km ≈ 0 °C na relva, calibrado

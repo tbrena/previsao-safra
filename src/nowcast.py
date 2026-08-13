@@ -26,9 +26,11 @@ import pandas as pd
 from . import config
 from .dados import geo, iea, power
 
-AREA_MINIMA_HA = 2000.0  # EDRs com café relevante (média 2010–2025)
-ANO_INICIAL_TREINO = 2012  # precisa de 2 lags a partir de 2010
-JANELAS_CLIMA_INICIO = "2009-01-01"
+AREA_MINIMA_HA = 2000.0  # EDRs com café relevante (média da série)
+# 2001 = primeiro ano em que o IEA mede café em hectares (antes era nº de pés,
+# sem conversão limpa — a densidade de plantio mudou muito nos anos 90)
+ANO_INICIAL_TREINO = 2001
+JANELAS_CLIMA_INICIO = "2000-01-01"
 
 COLUNAS_FEATURES = [
     "chuva_florada_mm",
@@ -41,10 +43,13 @@ COLUNAS_FEATURES = [
     "chuva_ciclo_mm",
     "rendimento_a1",
     "rendimento_a2",
+    "ancora_bienal",  # média das últimas 4 safras de mesma fase (bienal suavizado)
     "delta_bienal",
     "log_area",
     "var_area_pct",
     "razao_preco",
+    "anom_ndvi_florada",     # Sentinel-2, 2017+ (NaN antes — o modelo aceita)
+    "anom_ndvi_enchimento",
 ]
 
 
@@ -55,7 +60,9 @@ def clima_edr(edr_chave: str, centroide, fim: str) -> pd.DataFrame:
     cache = pasta / f"{edr_chave.replace(' ', '_')}.csv"
     if cache.exists():
         serie = pd.read_csv(cache, index_col=0, parse_dates=True)
-        if serie.index.max() >= pd.Timestamp(fim) - pd.Timedelta(days=5):
+        fim_ok = serie.index.max() >= pd.Timestamp(fim) - pd.Timedelta(days=5)
+        inicio_ok = serie.index.min() <= pd.Timestamp(JANELAS_CLIMA_INICIO) + pd.Timedelta(days=5)
+        if fim_ok and inicio_ok:
             return serie
     serie = power.clima_diario(
         centroide.y,
@@ -97,7 +104,7 @@ def features_clima(clima: pd.DataFrame, ano: int, climatologia: dict) -> dict:
     }
 
 
-def _climatologia(clima: pd.DataFrame, anos=range(2010, 2025)) -> dict:
+def _climatologia(clima: pd.DataFrame, anos=range(2001, 2021)) -> dict:
     floradas, enchimentos = [], []
     for ano in anos:
         floradas.append(_janela(clima, f"{ano - 1}-09-01", f"{ano - 1}-11-30")["PRECTOTCORR"].sum())
@@ -134,68 +141,105 @@ def montar_dataset(fim_clima: str, ano_previsao: int | None = None) -> pd.DataFr
         historico = cafe[cafe["edr_chave"] == chave].set_index("ano")
 
         for ano in anos_alvo:
-            r1 = historico["rendimento_kg_ha"].get(ano - 1)
-            r2 = historico["rendimento_kg_ha"].get(ano - 2)
-            # área do ano; para o ano de previsão (sem levantamento) usa a última
-            area = historico["area_producao_ha"].get(ano)
-            if pd.isna(area) or area is None:
-                area = historico["area_producao_ha"].get(ano - 1)
-            area_a1 = historico["area_producao_ha"].get(ano - 1)
-            if any(pd.isna(v) or v is None for v in (r1, r2, area, area_a1)):
-                continue
+            def _valor(coluna, a):
+                v = historico[coluna].get(a)
+                return float(v) if v is not None and not pd.isna(v) else np.nan
 
-            ate_marco = serie_preco.loc[: f"{ano}-03-31"]
-            preco_12m = ate_marco.tail(12).mean()
-            preco_36m = ate_marco.tail(36).mean()
+            r1 = _valor("rendimento_kg_ha", ano - 1)
+            r2 = _valor("rendimento_kg_ha", ano - 2)
+            pares = [_valor("rendimento_kg_ha", ano - k) for k in (2, 4, 6, 8)]
+            ancora = float(np.nanmean(pares)) if not all(np.isnan(v) for v in pares) else np.nan
+            # área do ano; para o ano de previsão (sem levantamento) usa a última
+            area = _valor("area_producao_ha", ano)
+            if np.isnan(area):
+                area = _valor("area_producao_ha", ano - 1)
+            area_a1 = _valor("area_producao_ha", ano - 1)
+            if np.isnan(area) or area <= 0:
+                continue  # sem área não há alvo nem previsão (era dos pés)
+
+            janela36 = serie_preco.loc[: f"{ano}-03-31"].tail(36)
+            razao = (
+                float(janela36.tail(12).mean() / janela36.mean())
+                if len(janela36) >= 30
+                else np.nan
+            )
 
             linha = {
                 "edr_chave": chave,
                 "edr": edr["edr"],
                 "ano": ano,
                 **features_clima(clima, ano, climatologia),
-                "rendimento_a1": float(r1),
-                "rendimento_a2": float(r2),
-                "delta_bienal": float(r1 - r2),
+                "rendimento_a1": r1,
+                "rendimento_a2": r2,
+                "ancora_bienal": ancora,
+                "delta_bienal": r1 - r2,
                 "log_area": float(np.log(area)),
-                "var_area_pct": round(100 * (area - area_a1) / area_a1, 2),
-                "razao_preco": round(float(preco_12m / preco_36m), 3),
-                "area_ha": float(area),
-                "rendimento_kg_ha": (
-                    float(historico["rendimento_kg_ha"].get(ano))
-                    if ano in historico.index
+                "var_area_pct": (
+                    round(100 * (area - area_a1) / area_a1, 2)
+                    if not np.isnan(area_a1) and area_a1 > 0
                     else np.nan
                 ),
+                "razao_preco": round(razao, 3) if not np.isnan(razao) else np.nan,
+                "area_ha": float(area),
+                "rendimento_kg_ha": _valor("rendimento_kg_ha", ano),
             }
             linhas.append(linha)
-    return pd.DataFrame(linhas)
+
+    dataset = pd.DataFrame(linhas)
+    # anomalias de NDVI (Sentinel-2, 2017+) — NaN onde não há satélite
+    if config.CACHE_NDVI_EDR.exists():
+        from .dados import ndvi_edr as _ndvi
+
+        serie_ndvi = pd.read_csv(config.CACHE_NDVI_EDR)
+        dataset = dataset.merge(
+            _ndvi.anomalias(serie_ndvi), on=["edr_chave", "ano"], how="left"
+        )
+    for coluna in ("anom_ndvi_florada", "anom_ndvi_enchimento"):
+        if coluna not in dataset.columns:
+            dataset[coluna] = np.nan
+    return dataset
 
 
-def validar_loyo(dataset: pd.DataFrame):
+def _novo_modelo():
+    from sklearn.ensemble import HistGradientBoostingRegressor
+
+    # HistGB lida nativamente com valores ausentes (lags de 2001-02, NDVI pré-2017)
+    return HistGradientBoostingRegressor(
+        max_iter=600,
+        learning_rate=0.05,
+        min_samples_leaf=5,
+        l2_regularization=1.0,
+        random_state=42,
+    )
+
+
+def validar_loyo(dataset: pd.DataFrame, colunas: list[str] | None = None):
     """Validação leave-one-year-out + baselines. Retorna (previsões, métricas)."""
-    from sklearn.ensemble import RandomForestRegressor
-
+    colunas = colunas or COLUNAS_FEATURES
     treino = dataset.dropna(subset=["rendimento_kg_ha"]).copy()
     anos = sorted(treino["ano"].unique())
     previsoes = []
     for ano in anos:
         fora = treino[treino["ano"] == ano]
         dentro = treino[treino["ano"] != ano]
-        modelo = RandomForestRegressor(
-            n_estimators=500, min_samples_leaf=2, random_state=42, n_jobs=-1
-        )
-        modelo.fit(dentro[COLUNAS_FEATURES], dentro["rendimento_kg_ha"])
+        modelo = _novo_modelo()
+        modelo.fit(dentro[colunas], dentro["rendimento_kg_ha"])
         parcial = fora[["edr_chave", "edr", "ano", "rendimento_kg_ha", "rendimento_a1", "rendimento_a2", "area_ha"]].copy()
-        parcial["previsto"] = modelo.predict(fora[COLUNAS_FEATURES])
+        parcial["previsto"] = modelo.predict(fora[colunas])
         previsoes.append(parcial)
     resultado = pd.concat(previsoes, ignore_index=True)
 
     erro = resultado["previsto"] - resultado["rendimento_kg_ha"]
-    erro_persistencia = resultado["rendimento_a1"] - resultado["rendimento_kg_ha"]
-    erro_bienal = resultado["rendimento_a2"] - resultado["rendimento_kg_ha"]
+    persistencia = resultado.dropna(subset=["rendimento_a1"])
+    bienal = resultado.dropna(subset=["rendimento_a2"])
     metricas = {
         "mae_modelo": float(erro.abs().mean()),
-        "mae_persistencia": float(erro_persistencia.abs().mean()),
-        "mae_bienal": float(erro_bienal.abs().mean()),
+        "mae_persistencia": float(
+            (persistencia["rendimento_a1"] - persistencia["rendimento_kg_ha"]).abs().mean()
+        ),
+        "mae_bienal": float(
+            (bienal["rendimento_a2"] - bienal["rendimento_kg_ha"]).abs().mean()
+        ),
         "rmse_modelo": float(np.sqrt((erro**2).mean())),
         "vies_modelo": float(erro.mean()),
         "n_observacoes": int(len(resultado)),
@@ -205,16 +249,21 @@ def validar_loyo(dataset: pd.DataFrame):
 
 
 def treinar_final(dataset: pd.DataFrame):
-    """Treina no histórico completo e devolve (modelo, importâncias)."""
-    from sklearn.ensemble import RandomForestRegressor
+    """Treina no histórico completo e devolve (modelo, importâncias por permutação)."""
+    from sklearn.inspection import permutation_importance
 
     treino = dataset.dropna(subset=["rendimento_kg_ha"])
-    modelo = RandomForestRegressor(
-        n_estimators=800, min_samples_leaf=2, random_state=42, n_jobs=-1
-    )
+    modelo = _novo_modelo()
     modelo.fit(treino[COLUNAS_FEATURES], treino["rendimento_kg_ha"])
+    resultado = permutation_importance(
+        modelo,
+        treino[COLUNAS_FEATURES],
+        treino["rendimento_kg_ha"],
+        n_repeats=8,
+        random_state=42,
+    )
     importancias = (
-        pd.Series(modelo.feature_importances_, index=COLUNAS_FEATURES)
+        pd.Series(resultado.importances_mean, index=COLUNAS_FEATURES)
         .sort_values(ascending=False)
         .rename("importancia")
         .reset_index()

@@ -62,6 +62,7 @@ PASTA_IEA_MUNICIPIOS = PASTA_IEA / "municipios"      # produção por município
 # Saídas processadas (cache de máscaras, datasets)
 PASTA_PROCESSADOS = RAIZ / "data" / "processed"
 CACHE_CELULAS_CAFE = PASTA_PROCESSADOS / "celulas_cafe_2023.csv"
+CACHE_NDVI_EDR = PASTA_PROCESSADOS / "ndvi_edr.csv"
 # Shapes (TopoJSON)
 CAMINHO_EDRS = RAIZ / "data" / "raw" / "shapes" / "edrs_cati_2022.topojson"
 CAMINHO_RAS = RAIZ / "data" / "raw" / "shapes" / "sp_regioes_administrativas.topojson"

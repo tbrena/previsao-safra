@@ -35,10 +35,31 @@ def principal() -> int:
 
     print("\nvalidacao leave-one-year-out...", flush=True)
     loyo, metricas = nowcast.validar_loyo(dataset)
+    # MAE ponderado por area: o erro que importa para a producao estadual
+    erro_abs = (loyo["previsto"] - loyo["rendimento_kg_ha"]).abs()
+    metricas["mae_modelo_pond_area"] = float(np.average(erro_abs, weights=loyo["area_ha"]))
+    com_a2 = loyo.dropna(subset=["rendimento_a2"])
+    metricas["mae_bienal_pond_area"] = float(
+        np.average(
+            (com_a2["rendimento_a2"] - com_a2["rendimento_kg_ha"]).abs(),
+            weights=com_a2["area_ha"],
+        )
+    )
     for chave, valor in metricas.items():
         print(f"  {chave}: {valor:.1f}" if isinstance(valor, float) else f"  {chave}: {valor}")
     ganho = 100 * (1 - metricas["mae_modelo"] / metricas["mae_persistencia"])
     print(f"  ganho vs persistencia: {ganho:.0f}%")
+
+    # valor agregado do NDVI: mesma validacao sem as features de satelite,
+    # comparada apenas nos anos em que o NDVI existe (2017+)
+    sem_ndvi = [c for c in nowcast.COLUNAS_FEATURES if not c.startswith("anom_ndvi")]
+    loyo_sem, _ = nowcast.validar_loyo(dataset, colunas=sem_ndvi)
+    com_recente = loyo[loyo["ano"] >= 2017]
+    sem_recente = loyo_sem[loyo_sem["ano"] >= 2017]
+    mae_com = (com_recente["previsto"] - com_recente["rendimento_kg_ha"]).abs().mean()
+    mae_sem = (sem_recente["previsto"] - sem_recente["rendimento_kg_ha"]).abs().mean()
+    print(f"\n  anos 2017+ (era Sentinel-2): MAE com NDVI {mae_com:.0f} | sem NDVI {mae_sem:.0f}"
+          f" | efeito do NDVI: {100 * (1 - mae_com / mae_sem):+.0f}%")
 
     modelo, importancias = nowcast.treinar_final(dataset)
     print("\nimportancia das features (top 6):")
