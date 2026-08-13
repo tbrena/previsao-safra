@@ -22,19 +22,26 @@ PRODUTO_CAFE = "Café (beneficiado)"
 KG_POR_SACA = 60.0
 
 
-def carregar(caminho: str | Path) -> pd.DataFrame:
+def carregar(caminho: str | Path, regiao: str = "edr") -> pd.DataFrame:
     """Um ou mais exports em formato tidy.
 
     ``caminho`` pode ser um .xlsx, uma pasta (lê todos os .xlsx dela) ou uma
     lista de arquivos. Períodos sobrepostos são deduplicados (vence o arquivo
     lido por último, em ordem alfabética de nome).
 
-    Colunas: produto, edr, ano, caracteristica, valor, unidade — uma linha por
-    característica preenchida. Rodapé e linhas sem ano são descartados.
+    ``regiao`` nomeia a coluna territorial conforme o export: "edr" (CATI
+    Regional/EDR) ou "municipio". Atenção: o próprio IEA considera o recorte
+    municipal menos confiável (amostra pequena por casa de agricultura) — usar
+    EDR para série/modelo e município como apoio.
+
+    Colunas: produto, {regiao}, ano, caracteristica, valor, unidade — uma
+    linha por característica preenchida. Rodapé e linhas sem ano descartados.
     """
-    tidy = pd.concat([_carregar_um(c) for c in _resolver(caminho)], ignore_index=True)
+    tidy = pd.concat(
+        [_carregar_um(c, regiao) for c in _resolver(caminho)], ignore_index=True
+    )
     return tidy.drop_duplicates(
-        subset=["produto", "edr", "ano", "caracteristica"], keep="last"
+        subset=["produto", regiao, "ano", "caracteristica"], keep="last"
     ).reset_index(drop=True)
 
 
@@ -50,13 +57,13 @@ def _resolver(caminho) -> list[Path]:
     return [caminho]
 
 
-def _carregar_um(caminho: Path) -> pd.DataFrame:
+def _carregar_um(caminho: Path, regiao: str = "edr") -> pd.DataFrame:
     bruto = pd.read_excel(caminho, skiprows=5)
     bruto = bruto.dropna(subset=["Ano"])
     partes = []
     for n in (1, 2, 3):
         sub = bruto[["Produto", "Região", "Ano", f"Desc.C{n}", f"C{n}", f"Unid.C{n}"]].copy()
-        sub.columns = ["produto", "edr", "ano", "caracteristica", "valor", "unidade"]
+        sub.columns = ["produto", regiao, "ano", "caracteristica", "valor", "unidade"]
         partes.append(sub.dropna(subset=["caracteristica"]))
     tidy = pd.concat(partes, ignore_index=True)
     tidy["ano"] = tidy["ano"].astype(int)
@@ -64,17 +71,11 @@ def _carregar_um(caminho: Path) -> pd.DataFrame:
     return tidy
 
 
-def cafe_edr(caminho: str | Path) -> pd.DataFrame:
-    """Café beneficiado por EDR/ano.
-
-    Colunas: edr, ano, area_nova_ha, area_producao_ha, producao_sc60 e
-    rendimento_kg_ha (produção × 60 kg / área em produção — comparável ao
-    rendimento do IBGE PAM, que também é café beneficiado).
-    """
-    tidy = carregar(caminho)
+def _cafe(caminho: str | Path, regiao: str) -> pd.DataFrame:
+    tidy = carregar(caminho, regiao)
     cafe = tidy[tidy["produto"] == PRODUTO_CAFE]
     largo = cafe.pivot_table(
-        index=["edr", "ano"], columns="caracteristica", values="valor", aggfunc="first"
+        index=[regiao, "ano"], columns="caracteristica", values="valor", aggfunc="first"
     ).reset_index()
     largo.columns.name = None
     largo = largo.rename(
@@ -90,8 +91,28 @@ def cafe_edr(caminho: str | Path) -> pd.DataFrame:
         .where(com_area)
         .round(0)
     )
-    largo["edr_chave"] = largo["edr"].map(chave_regiao)
-    return largo.sort_values(["edr", "ano"]).reset_index(drop=True)
+    largo[f"{regiao}_chave"] = largo[regiao].map(chave_regiao)
+    return largo.sort_values([regiao, "ano"]).reset_index(drop=True)
+
+
+def cafe_edr(caminho: str | Path) -> pd.DataFrame:
+    """Café beneficiado por EDR/ano.
+
+    Colunas: edr, ano, area_nova_ha, area_producao_ha, producao_sc60 e
+    rendimento_kg_ha (produção × 60 kg / área em produção — comparável ao
+    rendimento do IBGE PAM, que também é café beneficiado).
+    """
+    return _cafe(caminho, "edr")
+
+
+def cafe_municipio(caminho: str | Path) -> pd.DataFrame:
+    """Café beneficiado por município/ano (export "Região: Municípios").
+
+    Mesmas colunas de :func:`cafe_edr`, com ``municipio``/``municipio_chave``.
+    O IEA considera o recorte municipal menos confiável — usar como apoio/QA;
+    a verdade municipal segue sendo o IBGE (``src/dados/sidra.py``).
+    """
+    return _cafe(caminho, "municipio")
 
 
 def valor_producao(caminho: str | Path) -> pd.DataFrame:
