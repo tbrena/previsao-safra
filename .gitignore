@@ -37,9 +37,21 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Dados grandes / saídas
-data/
+# Dados: versiona o que o painel publicado precisa; ignora caches/regeneráveis
+data/**
 !data/README.md
+!data/raw/
+!data/raw/iea/
+!data/raw/iea/**
+!data/raw/shapes/
+!data/raw/shapes/**
+!data/processed/
+!data/processed/nowcast_previsao.csv
+!data/processed/nowcast_metricas.csv
+!data/processed/nowcast_loyo.csv
+!data/processed/nowcast_importancias.csv
+!data/processed/nowcast_dataset.csv
+!data/processed/celulas_cafe_2023.csv
 output/
 dist/
 build/
