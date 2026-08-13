@@ -58,6 +58,10 @@ PASTA_IEA_SALARIOS = PASTA_IEA / "salarios"          # salários rurais por EDR
 PASTA_IEA_COLHEITA = PASTA_IEA / "colheita"          # pagamento de colheita por EDR
 PASTA_IEA_RECEBIDOS = PASTA_IEA / "recebidos"        # preços recebidos pelos agricultores
 PASTA_IEA_MUNICIPIOS = PASTA_IEA / "municipios"      # produção por município (menos confiável)
+
+# Saídas processadas (cache de máscaras, datasets)
+PASTA_PROCESSADOS = RAIZ / "data" / "processed"
+CACHE_CELULAS_CAFE = PASTA_PROCESSADOS / "celulas_cafe_2023.csv"
 # Shapes (TopoJSON)
 CAMINHO_EDRS = RAIZ / "data" / "raw" / "shapes" / "edrs_cati_2022.topojson"
 CAMINHO_RAS = RAIZ / "data" / "raw" / "shapes" / "sp_regioes_administrativas.topojson"
