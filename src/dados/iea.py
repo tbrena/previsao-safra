@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .util import chave_regiao
+
 PRODUTO_CAFE = "Café (beneficiado)"
 KG_POR_SACA = 60.0
 
@@ -88,6 +90,7 @@ def cafe_edr(caminho: str | Path) -> pd.DataFrame:
         .where(com_area)
         .round(0)
     )
+    largo["edr_chave"] = largo["edr"].map(chave_regiao)
     return largo.sort_values(["edr", "ano"]).reset_index(drop=True)
 
 
@@ -102,4 +105,5 @@ def produto_edr(caminho: str | Path, produto: str) -> pd.DataFrame:
         index=["edr", "ano"], columns="caracteristica", values="valor", aggfunc="first"
     ).reset_index()
     largo.columns.name = None
+    largo["edr_chave"] = largo["edr"].map(chave_regiao)
     return largo.sort_values(["edr", "ano"]).reset_index(drop=True)

@@ -52,3 +52,6 @@ AOI_GUAXUPE = (-46.76, -21.36, -46.68, -21.28)
 RAIZ = Path(__file__).resolve().parents[1]
 # Pasta com os exports do banco IEA (todos os .xlsx são lidos e consolidados)
 PASTA_IEA = RAIZ / "data" / "raw" / "iea"
+# Shapes (TopoJSON)
+CAMINHO_EDRS = RAIZ / "data" / "raw" / "shapes" / "edrs_cati_2022.topojson"
+CAMINHO_RAS = RAIZ / "data" / "raw" / "shapes" / "sp_regioes_administrativas.topojson"
