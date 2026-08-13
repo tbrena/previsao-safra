@@ -28,9 +28,20 @@ temp/
 *.tmp
 *.bak
 
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
 # Dados grandes / saídas
-data/raw/
-data/interim/
+data/
+!data/README.md
 output/
 dist/
 build/
+*.tif
+*.parquet

@@ -1,0 +1,11 @@
+# Coleta de dados
+requests>=2.31
+pandas>=2.0
+numpy>=1.26
+pystac-client>=0.7
+rasterio>=1.3.9
+
+# Modelagem (fases seguintes — descomentar quando chegar lá)
+# scikit-learn>=1.4
+# matplotlib>=3.8
+# xgboost>=2.0
