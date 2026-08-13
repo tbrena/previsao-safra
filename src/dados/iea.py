@@ -94,6 +94,72 @@ def cafe_edr(caminho: str | Path) -> pd.DataFrame:
     return largo.sort_values(["edr", "ano"]).reset_index(drop=True)
 
 
+def valor_producao(caminho: str | Path) -> pd.DataFrame:
+    """Valor da Produção (VPA) por produto/EDR/ano — aba "Dados" do export.
+
+    Colunas: produto, grupo, edr, ano, calculo, preco, producao, unidade,
+    valor, edr_chave. Preços e valores deflacionados pelo IPCA (o mês de
+    referência está no cabeçalho do arquivo). Aceita arquivo, pasta ou lista.
+    """
+    quadros = []
+    for arquivo in _resolver(caminho):
+        df = pd.read_excel(arquivo, sheet_name="Dados", skiprows=6)
+        df = df.dropna(subset=["Ano"]).rename(
+            columns={
+                "Produto": "produto",
+                "Grupo": "grupo",
+                "Região": "edr",
+                "Ano": "ano",
+                "Cálculo": "calculo",
+                "Preço": "preco",
+                "Produção": "producao",
+                "Unidade": "unidade",
+                "Valor da Produção": "valor",
+            }
+        )
+        quadros.append(df)
+    tidy = pd.concat(quadros, ignore_index=True)
+    tidy["ano"] = tidy["ano"].astype(int)
+    for coluna in ("preco", "producao", "valor"):
+        tidy[coluna] = pd.to_numeric(tidy[coluna], errors="coerce")
+    tidy["edr_chave"] = tidy["edr"].map(chave_regiao)
+    return tidy.drop_duplicates(
+        subset=["produto", "edr", "ano"], keep="last"
+    ).reset_index(drop=True)
+
+
+def preco_atacado(caminho: str | Path) -> pd.DataFrame:
+    """Preços médios mensais de venda no atacado (município de São Paulo).
+
+    Colunas: produto, ano, mes, data, moeda, preco, unidade. Série desde 1966;
+    atenção à coluna ``moeda`` antes do Plano Real. Aceita arquivo/pasta/lista.
+    """
+    quadros = []
+    for arquivo in _resolver(caminho):
+        df = pd.read_excel(arquivo, skiprows=5)
+        df = df.dropna(subset=["Ano"]).rename(
+            columns={
+                "Produto": "produto",
+                "Mês": "mes",
+                "Ano": "ano",
+                "Moeda": "moeda",
+                "Preço": "preco",
+                "Unidade": "unidade",
+            }
+        )
+        quadros.append(df)
+    tidy = pd.concat(quadros, ignore_index=True)
+    tidy["ano"] = tidy["ano"].astype(int)
+    tidy["mes"] = tidy["mes"].astype(int)
+    tidy["preco"] = pd.to_numeric(tidy["preco"], errors="coerce")
+    tidy = tidy.drop_duplicates(subset=["produto", "ano", "mes"], keep="last")
+    tidy["data"] = pd.to_datetime(
+        {"year": tidy["ano"], "month": tidy["mes"], "day": 1}
+    )
+    colunas = ["produto", "ano", "mes", "data", "moeda", "preco", "unidade"]
+    return tidy[colunas].sort_values(["produto", "data"]).reset_index(drop=True)
+
+
 def produto_edr(caminho: str | Path, produto: str) -> pd.DataFrame:
     """Qualquer produto em formato largo (característica → coluna)."""
     tidy = carregar(caminho)
