@@ -1,0 +1,5 @@
+id,data_congelamento,commit,cultura,ano_safra,n_edrs,producao_prevista_unid,unidade_producao,producao_prevista_t,mae_validacao,unidade_alvo
+amendoim_2026_2026-08-13,2026-08-13,16a0fd1,amendoim,2026,18,23505078.0,sc 25 kg,587626.0,394.6296175818812,kg/ha
+cafe_2026_2026-08-13,2026-08-13,16a0fd1,cafe,2026,16,4776403.0,sc 60 kg,286585.0,202.4612372956724,kg/ha
+laranja_2026_2026-08-13,2026-08-13,16a0fd1,laranja,2026,24,226091249.0,"cx 40,8 kg",9224522.0,0.2048649849071181,cx/pé
+milho_safrinha_2026_2026-08-13,2026-08-13,16a0fd1,milho_safrinha,2026,22,32706167.0,sc 60 kg,1962370.0,657.7625206530388,kg/ha

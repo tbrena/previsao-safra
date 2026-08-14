@@ -22,7 +22,7 @@ import streamlit as st
 for _nome in [m for m in list(sys.modules) if m == "src" or m.startswith("src.")]:
     del sys.modules[_nome]
 try:
-    from src import config, nowcast
+    from src import config, nowcast, placar
     from src.dados import geo, iea
 except Exception:
     import traceback
@@ -108,8 +108,8 @@ dados = carregar_processados(cultura)
 serie_producao = carregar_serie_producao(cultura)
 serie_preco = carregar_serie_preco(cultura)
 
-aba_previsao, aba_entenda, aba_series, aba_geada, aba_metodo = st.tabs(
-    ["📈 Previsão da safra", "🧭 Entenda o sistema", "🗺️ Séries por EDR",
+aba_previsao, aba_placar, aba_entenda, aba_series, aba_geada, aba_metodo = st.tabs(
+    ["📈 Previsão da safra", "🎯 Placar", "🧭 Entenda o sistema", "🗺️ Séries por EDR",
      "❄️ Monitor de geada", "📚 Metodologia"]
 )
 
@@ -230,6 +230,74 @@ with aba_previsao:
             "tmin_fria": "T mín. janela fria (°C)",
         })
         st.dataframe(tabela, use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------------- aba placar
+with aba_placar:
+    st.subheader("🎯 Previsto × Realizado — o placar público")
+    st.markdown(
+        """
+**As regras deste placar:** cada previsão é **congelada** com data, commit do código
+e detalhe por região — e nunca mais é alterada. Quando o levantamento oficial do
+ano-safra sai, o confronto aparece aqui automaticamente: **acerto ou erro, em público**.
+Previsão sem placar é só opinião.
+"""
+    )
+    @st.cache_data(show_spinner="Calculando confrontos...", ttl=600)
+    def _confronto_cacheado():
+        return placar.confrontar()
+
+    confronto = _confronto_cacheado()
+    if confronto.empty:
+        st.info("Nenhuma previsão congelada ainda.")
+    else:
+        visao = confronto.copy()
+        visao["cultura"] = visao["cultura"].map(
+            lambda c: f"{EMOJI.get(c, '')} {nowcast.CULTURAS[c]['rotulo']}"
+        )
+        visao["previsto"] = visao.apply(
+            lambda l: f"{l['producao_prevista_unid'] / 1e6:.2f} M {l['unidade_producao']}", axis=1
+        )
+        visao["realizado"] = visao.apply(
+            lambda l: (
+                f"{l['producao_real_unid'] / 1e6:.2f} M {l['unidade_producao']}"
+                if l["status"] == "confrontado"
+                else "—"
+            ),
+            axis=1,
+        )
+        visao["erro"] = visao.apply(
+            lambda l: f"{l['erro_producao_pct']:+.1f}%" if l["status"] == "confrontado" else "—",
+            axis=1,
+        )
+        visao["situação"] = visao["status"].map(
+            {"aguardando levantamento": "⏳ aguardando levantamento", "confrontado": "✅ confrontado"}
+        )
+        st.dataframe(
+            visao[
+                ["cultura", "ano_safra", "data_congelamento", "commit",
+                 "previsto", "realizado", "erro", "situação"]
+            ].rename(columns={
+                "cultura": "Cultura", "ano_safra": "Ano-safra",
+                "data_congelamento": "Congelada em", "commit": "Commit",
+                "previsto": "Previsto", "realizado": "Realizado", "erro": "Erro",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
+        confrontadas = confronto[confronto["status"] == "confrontado"]
+        if not confrontadas.empty:
+            vitorias = int(confrontadas["modelo_venceu"].sum())
+            st.metric(
+                "Placar contra a persistência",
+                f"{vitorias} × {len(confrontadas) - vitorias}",
+                "modelo × baseline, nos confrontos fechados",
+                delta_color="off",
+            )
+        st.caption(
+            "Próximo confronto: levantamento do IEA para o ano-safra 2026 "
+            "(previsto para setembro/2026). Os arquivos congelados vivem em "
+            "`previsoes/` no repositório — append-only, com histórico no git."
+        )
 
 # ---------------------------------------------------------------- aba entenda
 with aba_entenda:

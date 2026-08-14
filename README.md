@@ -104,6 +104,7 @@ python -m venv .venv
 - [x] Série IEA 1983–2025 integrada (café em kg/ha desde 2001; era dos pés documentada)
 - [x] NDVI Sentinel-2 como covariável (café e laranja; +3% no café em 2017+)
 - [x] Multi-cultura: laranja (alvo em cx/pé), amendoim (águas+seca somadas) e milho safrinha
+- [x] **Placar público** (`previsoes/`, aba 🎯 no painel): previsões congeladas com data+commit, confronto automático quando o levantamento oficial sai. Regra: append-only — registros nunca são editados
 - [ ] Automação (GitHub Actions): geada diária no inverno + nowcast mensal + boletim
 - [ ] Confronto automático previsto × realizado quando os levantamentos saírem
 - [ ] Sistema 1 (geada) para laranja e milho safrinha; seca como evento de 1ª classe

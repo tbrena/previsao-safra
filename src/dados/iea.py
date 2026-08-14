@@ -34,15 +34,47 @@ def carregar(caminho: str | Path, regiao: str = "edr") -> pd.DataFrame:
     municipal menos confiável (amostra pequena por casa de agricultura) — usar
     EDR para série/modelo e município como apoio.
 
+    O parse dos .xlsx é caro (~dezenas de segundos); o resultado é cacheado em
+    pickle local, invalidado automaticamente se os arquivos-fonte mudarem.
+
     Colunas: produto, {regiao}, ano, caracteristica, valor, unidade — uma
     linha por característica preenchida. Rodapé e linhas sem ano descartados.
     """
+    caminhos = _resolver(caminho)
+    cache = _caminho_cache_parse(caminhos, regiao)
+    if cache is not None and cache.exists():
+        try:
+            return pd.read_pickle(cache)
+        except Exception:
+            pass  # cache corrompido — reparseia
     tidy = pd.concat(
-        [_carregar_um(c, regiao) for c in _resolver(caminho)], ignore_index=True
+        [_carregar_um(c, regiao) for c in caminhos], ignore_index=True
     )
-    return tidy.drop_duplicates(
+    tidy = tidy.drop_duplicates(
         subset=["produto", regiao, "ano", "caracteristica"], keep="last"
     ).reset_index(drop=True)
+    if cache is not None:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            tidy.to_pickle(cache)
+        except Exception:
+            pass
+    return tidy
+
+
+def _caminho_cache_parse(caminhos: list[Path], regiao: str) -> Path | None:
+    """Cache do parse keyado por caminhos+mtimes — muda o arquivo, muda a chave."""
+    import hashlib
+
+    try:
+        assinatura = "|".join(
+            f"{c.resolve()}:{c.stat().st_mtime_ns}" for c in caminhos
+        ) + f"|{regiao}"
+        digest = hashlib.md5(assinatura.encode()).hexdigest()[:16]
+        base = Path(__file__).resolve().parents[2] / "data" / "processed" / "cache_iea"
+        return base / f"tidy_{digest}.pkl"
+    except OSError:
+        return None
 
 
 def _resolver(caminho) -> list[Path]:
