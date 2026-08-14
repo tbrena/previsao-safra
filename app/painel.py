@@ -59,7 +59,7 @@ EMOJI = {"cafe": "☕", "laranja": "🍊", "amendoim": "🥜", "milho_safrinha":
 
 
 # ---------------------------------------------------------------- dados
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=600)
 def carregar_processados(cultura: str):
     pasta = config.PASTA_PROCESSADOS
     saida = {}
@@ -69,7 +69,7 @@ def carregar_processados(cultura: str):
     return saida
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def carregar_serie_producao(cultura: str):
     cfg = nowcast.CULTURAS[cultura]
     return iea.producao_edr(config.PASTA_IEA, cfg["produtos"], cfg["kg_por_unidade"])
