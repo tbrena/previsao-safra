@@ -1,7 +1,10 @@
 # Previsão de Safra
 
-Previsão de produtividade agrícola no Brasil — começando pelo **café** — usando
-satélites gratuitos, clima e estatísticas oficiais como verdade de campo.
+Previsão de produtividade agrícola paulista por região (EDR) — **café, laranja,
+amendoim e milho safrinha** — usando satélites gratuitos, clima e estatísticas
+oficiais como verdade de campo. Café é a cultura-piloto (inclui o sistema de
+resposta rápida a geada); as demais rodam no mesmo motor
+(`scripts/rodar_nowcast.py --cultura ...`).
 
 ## Abordagem
 
@@ -98,10 +101,13 @@ python -m venv .venv
 - [x] **Sistema 1** — resposta rápida a geada: detector calibrado (2021) + ΔNDVI com controle + sacas/R$; validado por dose-resposta e placebo (`relatorios/backtest_geada_jul2021.md`)
 - [x] **Sistema 2** — nowcast por EDR: clima fenológico + bienalidade + área + preço, validação leave-one-year-out, previsão 2026
 - [x] Painel Streamlit (previsão, séries, monitor de geada, metodologia)
-- [ ] Exportar série IEA 1983–2009 para esticar o treino
-- [ ] NDVI mensal por EDR como covariável do nowcast (GEE/MODIS)
-- [ ] Boletim mensal automatizado + comparação com levantamentos IEA/CONAB
-- [ ] Expandir para soja/milho/cana (IEA já cobre ~90 produtos)
+- [x] Série IEA 1983–2025 integrada (café em kg/ha desde 2001; era dos pés documentada)
+- [x] NDVI Sentinel-2 como covariável (café e laranja; +3% no café em 2017+)
+- [x] Multi-cultura: laranja (alvo em cx/pé), amendoim (águas+seca somadas) e milho safrinha
+- [ ] Automação (GitHub Actions): geada diária no inverno + nowcast mensal + boletim
+- [ ] Confronto automático previsto × realizado quando os levantamentos saírem
+- [ ] Sistema 1 (geada) para laranja e milho safrinha; seca como evento de 1ª classe
+- [ ] Expandir para soja/cana (IEA já cobre ~90 produtos)
 
 ## Licença
 

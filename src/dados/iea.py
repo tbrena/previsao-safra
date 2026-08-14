@@ -105,6 +105,74 @@ def cafe_edr(caminho: str | Path) -> pd.DataFrame:
     return _cafe(caminho, "edr")
 
 
+_RENOMEAR_CARACTERISTICAS = {
+    "ÁREA NOVA": "area_nova_ha",
+    "AREA EM PRODUCAO": "area_producao_ha",
+    "AREA EM PROCUCAO": "area_producao_ha",  # typo real no export (1997)
+    "ÁREA": "area_producao_ha",
+    "PRODUÇÃO": "producao_unid",
+    "PÉS NOVOS": "pes_novos",
+    "PÉS EM PRODUÇÃO": "pes_producao",
+}
+
+
+def producao_edr(
+    caminho: str | Path,
+    produtos: str | list[str],
+    kg_por_unidade: float,
+) -> pd.DataFrame:
+    """Produção de qualquer cultura por EDR/ano, com produtos somáveis.
+
+    ``produtos`` aceita lista para consolidar desdobramentos históricos
+    (ex.: Amendoim das águas + da seca até 2019, "Amendoim" depois).
+
+    Retorna: edr, edr_chave, ano, e as colunas disponíveis entre
+    area_nova_ha, area_producao_ha, pes_novos, pes_producao, producao_unid,
+    producao_t, rendimento_kg_ha (se houver área) e rendimento_unid_por_pe
+    (se a cultura for medida em pés, caso da laranja).
+    """
+    if isinstance(produtos, str):
+        produtos = [produtos]
+    tidy = carregar(caminho)
+    sel = tidy[tidy["produto"].str.strip().isin([p.strip() for p in produtos])]
+    if sel.empty:
+        raise ValueError(f"nenhum dado para {produtos!r}")
+    largo = sel.pivot_table(
+        index=["produto", "edr", "ano"], columns="caracteristica", values="valor", aggfunc="first"
+    ).reset_index()
+    largo.columns.name = None
+    largo = largo.rename(columns=_RENOMEAR_CARACTERISTICAS)
+    # rótulos históricos equivalentes (ex.: "ÁREA", "AREA EM PRODUCAO" e o typo
+    # "AREA EM PROCUCAO") viram o mesmo nome — colapsa pegando o 1º não-nulo
+    if largo.columns.duplicated().any():
+        for nome in largo.columns[largo.columns.duplicated()].unique():
+            bloco = largo.loc[:, largo.columns == nome]
+            colapsada = bloco.bfill(axis=1).iloc[:, 0]
+            largo = largo.loc[:, largo.columns != nome]
+            largo[nome] = colapsada
+    numericas = list(dict.fromkeys(
+        c for c in _RENOMEAR_CARACTERISTICAS.values() if c in largo.columns
+    ))
+    # soma os produtos (safras desdobradas) por EDR/ano
+    largo = largo.groupby(["edr", "ano"], as_index=False)[numericas].sum(min_count=1)
+
+    largo["producao_t"] = largo["producao_unid"] * kg_por_unidade / 1000.0
+    if "area_producao_ha" in largo.columns:
+        com_area = largo["area_producao_ha"] > 0
+        largo["rendimento_kg_ha"] = (
+            (largo["producao_unid"] * kg_por_unidade / largo["area_producao_ha"])
+            .where(com_area)
+            .round(1)
+        )
+    if "pes_producao" in largo.columns:
+        com_pes = largo["pes_producao"] > 0
+        largo["rendimento_unid_por_pe"] = (
+            (largo["producao_unid"] / largo["pes_producao"]).where(com_pes).round(4)
+        )
+    largo["edr_chave"] = largo["edr"].map(chave_regiao)
+    return largo.sort_values(["edr", "ano"]).reset_index(drop=True)
+
+
 def cafe_municipio(caminho: str | Path) -> pd.DataFrame:
     """Café beneficiado por município/ano (export "Região: Municípios").
 

@@ -50,9 +50,8 @@ data/**
 !data/processed/nowcast_metricas.csv
 !data/processed/nowcast_loyo.csv
 !data/processed/nowcast_importancias.csv
-!data/processed/nowcast_dataset.csv
-!data/processed/celulas_cafe_2023.csv
-!data/processed/ndvi_edr.csv
+!data/processed/celulas_*.csv
+!data/processed/ndvi_*.csv
 output/
 dist/
 build/

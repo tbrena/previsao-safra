@@ -38,12 +38,7 @@ def ler_mascara_cafe(bbox, ano: int = ANO_MAXIMO):
 
     Retorna (mascara, transform, crs) na resolução nativa de ~30 m.
     """
-    with rasterio.open(url_cobertura(ano)) as raster:
-        limites = transform_bounds("EPSG:4326", raster.crs, *bbox)
-        janela = from_bounds(*limites, transform=raster.transform)
-        dados = raster.read(1, window=janela, boundless=True, fill_value=0)
-        transformacao = raster.window_transform(janela)
-        return dados == CLASSE_CAFE, transformacao, raster.crs
+    return ler_mascara_classe(bbox, CLASSE_CAFE, ano)
 
 
 def _hectares_por_pixel(transformacao, latitude_media: float) -> float:
@@ -53,6 +48,16 @@ def _hectares_por_pixel(transformacao, latitude_media: float) -> float:
     return largura_m * altura_m / 10_000.0
 
 
+def ler_mascara_classe(bbox, classe: int, ano: int = ANO_MAXIMO):
+    """Máscara booleana de uma classe MapBiomas qualquer no bbox."""
+    with rasterio.open(url_cobertura(ano)) as raster:
+        limites = transform_bounds("EPSG:4326", raster.crs, *bbox)
+        janela = from_bounds(*limites, transform=raster.transform)
+        dados = raster.read(1, window=janela, boundless=True, fill_value=0)
+        transformacao = raster.window_transform(janela)
+        return dados == classe, transformacao, raster.crs
+
+
 def celulas_cafe(
     edrs,
     ano: int = ANO_MAXIMO,
@@ -60,14 +65,27 @@ def celulas_cafe(
     minimo_ha: float = 30.0,
     caminho_cache: str | Path | None = None,
 ) -> pd.DataFrame:
-    """Grade de células (~5,5 km) com hectares de café por EDR.
+    """Grade de células (~5,5 km) com hectares de café por EDR."""
+    return celulas_classe(edrs, CLASSE_CAFE, ano, celula_graus, minimo_ha, caminho_cache)
+
+
+def celulas_classe(
+    edrs,
+    classe: int,
+    ano: int = ANO_MAXIMO,
+    celula_graus: float = 0.05,
+    minimo_ha: float = 30.0,
+    caminho_cache: str | Path | None = None,
+) -> pd.DataFrame:
+    """Grade de células (~5,5 km) com hectares de uma classe MapBiomas por EDR.
 
     ``edrs`` é o GeoDataFrame de :func:`src.dados.geo.carregar_edrs`. Para
-    cada EDR, lê a máscara de café do bbox, restringe ao polígono e soma os
-    pixels de café por célula da grade. Células com menos de ``minimo_ha``
-    são descartadas.
+    cada EDR, lê a máscara da classe (46 = café, 47 = citros...) do bbox,
+    restringe ao polígono e soma os pixels por célula da grade. Células com
+    menos de ``minimo_ha`` são descartadas.
 
-    Retorna DataFrame: edr, edr_chave, oeste, sul, leste, norte, cafe_ha.
+    Retorna DataFrame: edr, edr_chave, oeste, sul, leste, norte, cafe_ha
+    (nome da coluna de hectares mantido por compatibilidade).
     Com ``caminho_cache``, salva/reusa CSV (recalcula se o arquivo não existir).
     """
     if caminho_cache is not None:
@@ -78,7 +96,7 @@ def celulas_cafe(
     linhas = []
     for _, edr in edrs.iterrows():
         oeste, sul, leste, norte = edr.geometry.bounds
-        mascara, transformacao, _ = ler_mascara_cafe((oeste, sul, leste, norte), ano)
+        mascara, transformacao, _ = ler_mascara_classe((oeste, sul, leste, norte), classe, ano)
         dentro = geometry_mask(
             [edr.geometry.__geo_interface__],
             out_shape=mascara.shape,

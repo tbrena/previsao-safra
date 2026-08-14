@@ -1,10 +1,11 @@
 """Gera a série de NDVI por EDR (janelas florada/enchimento, 2017–2026).
 
 Uso:
-    .venv\\Scripts\\python scripts\\gerar_ndvi_edr.py
+    .venv\\Scripts\\python scripts\\gerar_ndvi_edr.py [--cultura cafe|laranja]
 
-Incremental: só busca o que falta em data/processed/ndvi_edr.csv.
+Incremental: só busca o que falta no cache da cultura.
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -17,18 +18,23 @@ from src.dados import iea, ndvi_edr
 
 
 def principal() -> int:
-    celulas = pd.read_csv(config.CACHE_CELULAS_CAFE)
-    cafe = iea.cafe_edr(config.PASTA_IEA)
-    medias = cafe.groupby("edr_chave")["area_producao_ha"].mean()
-    elegiveis = sorted(medias[medias >= nowcast.AREA_MINIMA_HA].index)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cultura", default="cafe",
+                        choices=[c for c, cfg in nowcast.CULTURAS.items() if cfg["ndvi"]])
+    argumentos = parser.parse_args()
+    cfg = nowcast.CULTURAS[argumentos.cultura]
 
-    print(f"NDVI por EDR: {len(elegiveis)} EDRs, anos-safra 2017–2026, 2 janelas")
-    serie = ndvi_edr.gerar_serie(
-        celulas, elegiveis, range(2017, 2027), config.CACHE_NDVI_EDR
-    )
+    celulas = pd.read_csv(config.PASTA_PROCESSADOS / cfg["celulas"])
+    dados = iea.producao_edr(config.PASTA_IEA, cfg["produtos"], cfg["kg_por_unidade"])
+    medias = dados.groupby("edr_chave")[cfg["capacidade"]].mean()
+    elegiveis = sorted(medias[medias >= cfg["capacidade_minima"]].index)
+
+    cache = config.PASTA_PROCESSADOS / cfg["ndvi"]
+    print(f"[{cfg['rotulo']}] NDVI: {len(elegiveis)} EDRs, anos-safra 2017–2026, 2 janelas")
+    serie = ndvi_edr.gerar_serie(celulas, elegiveis, range(2017, 2027), cache)
     validos = serie.dropna(subset=["ndvi"])
     print(f"\ntotal: {len(serie)} combinações | com dado: {len(validos)}")
-    print(f"cache: {config.CACHE_NDVI_EDR}")
+    print(f"cache: {cache}")
     return 0
 
 

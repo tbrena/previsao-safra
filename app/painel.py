@@ -1,10 +1,10 @@
-"""Painel do projeto Previsão de Safra — café paulista.
+"""Painel do projeto Previsão de Safra — culturas paulistas por EDR.
 
 Uso:
     .venv\\Scripts\\streamlit run app\\painel.py
 
 Lê as saídas pré-computadas de ``data/processed/`` (gere com
-``scripts/rodar_nowcast.py``) e as séries do IEA em ``data/raw/iea/``.
+``scripts/rodar_nowcast.py --cultura ...``) e as séries do IEA.
 """
 import sys
 from pathlib import Path
@@ -16,14 +16,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import config
+from src import config, nowcast
 from src.dados import geo, iea
 
 # ---------------------------------------------------------------- tokens
 COR = {
-    "s1": "#2a78d6",  # série 1 (azul)
-    "s2": "#eb6834",  # série 2 (laranja)
-    "s3": "#1baf7a",  # série 3 (aqua)
+    "s1": "#2a78d6",
+    "s2": "#eb6834",
+    "s3": "#1baf7a",
     "tinta": "#0b0b0b",
     "tinta2": "#52514e",
     "mudo": "#898781",
@@ -43,26 +43,32 @@ MODELO_LAYOUT = dict(
     hoverlabel=dict(bgcolor="#ffffff", font_color=COR["tinta"]),
 )
 
+EMOJI = {"cafe": "☕", "laranja": "🍊", "amendoim": "🥜", "milho_safrinha": "🌽"}
+
 
 # ---------------------------------------------------------------- dados
 @st.cache_data(show_spinner=False)
-def carregar_processados():
+def carregar_processados(cultura: str):
     pasta = config.PASTA_PROCESSADOS
     saida = {}
-    for nome in ("previsao", "metricas", "loyo", "importancias", "dataset"):
-        caminho = pasta / f"nowcast_{nome}.csv"
+    for nome in ("previsao", "metricas", "loyo", "importancias"):
+        caminho = pasta / f"nowcast_{cultura}_{nome}.csv"
         saida[nome] = pd.read_csv(caminho) if caminho.exists() else None
     return saida
 
 
 @st.cache_data(show_spinner=False)
-def carregar_series_iea():
-    cafe = iea.cafe_edr(config.PASTA_IEA)
+def carregar_serie_producao(cultura: str):
+    cfg = nowcast.CULTURAS[cultura]
+    return iea.producao_edr(config.PASTA_IEA, cfg["produtos"], cfg["kg_por_unidade"])
+
+
+@st.cache_data(show_spinner=False)
+def carregar_serie_preco(cultura: str):
+    cfg = nowcast.CULTURAS[cultura]
     precos = iea.preco_recebido(config.PASTA_IEA_RECEBIDOS)
-    preco_cafe = precos[
-        (precos["produto"] == "Café benef. secagem natural") & (precos["moeda"] == "R$")
-    ][["data", "preco"]]
-    return cafe, preco_cafe
+    sel = precos[(precos["produto"] == cfg["preco_produto"]) & (precos["moeda"] == "R$")]
+    return sel[["data", "preco", "unidade"]]
 
 
 @st.cache_resource(show_spinner=False)
@@ -73,15 +79,22 @@ def carregar_geojson():
 
 
 # ---------------------------------------------------------------- página
-st.set_page_config(page_title="Previsão de Safra — Café SP", page_icon="☕", layout="wide")
-st.title("☕ Previsão de Safra — Café Paulista")
+st.set_page_config(page_title="Previsão de Safra — SP", page_icon="🛰️", layout="wide")
+st.title("🛰️ Previsão de Safra — Culturas Paulistas")
 st.caption(
     "Satélite gratuito (Sentinel-2, MapBiomas) + clima (NASA POWER) + IEA/CATI + IBGE. "
     "Nível: CATI Regional/EDR."
 )
 
-dados = carregar_processados()
-cafe, preco_cafe = carregar_series_iea()
+rotulos = {chave: f"{EMOJI.get(chave, '')} {cfg['rotulo']}" for chave, cfg in nowcast.CULTURAS.items()}
+cultura = st.radio(
+    "Cultura", options=list(rotulos), format_func=rotulos.get, horizontal=True, label_visibility="collapsed"
+)
+cfg = nowcast.CULTURAS[cultura]
+
+dados = carregar_processados(cultura)
+serie_producao = carregar_serie_producao(cultura)
+serie_preco = carregar_serie_preco(cultura)
 
 aba_previsao, aba_entenda, aba_series, aba_geada, aba_metodo = st.tabs(
     ["📈 Previsão da safra", "🧭 Entenda o sistema", "🗺️ Séries por EDR",
@@ -93,36 +106,53 @@ with aba_previsao:
     previsao = dados["previsao"]
     metricas = dados["metricas"]
     if previsao is None:
-        st.warning("Rode `scripts/rodar_nowcast.py` para gerar a previsão.")
+        st.warning(f"Rode `scripts/rodar_nowcast.py --cultura {cultura}` para gerar a previsão.")
     else:
         ano_prev = int(previsao["ano"].iloc[0])
-        ultimo_ano = int(cafe["ano"].max())
+        historico_alvo = serie_producao.dropna(subset=[cfg["alvo"]])
+        ultimo_ano = int(historico_alvo["ano"].max())
         cobertos = set(previsao["edr_chave"])
-        base_ant = cafe[(cafe["ano"] == ultimo_ano) & (cafe["edr_chave"].isin(cobertos))]
+        base_ant = historico_alvo[
+            (historico_alvo["ano"] == ultimo_ano) & (historico_alvo["edr_chave"].isin(cobertos))
+        ]
 
-        producao_prev = previsao["producao_prevista_sc60"].sum()
-        producao_ant = base_ant["producao_sc60"].sum()
-        rend_prev = 60.0 * producao_prev / previsao["area_ha"].sum()
-        rend_ant = 60.0 * producao_ant / base_ant["area_producao_ha"].sum()
+        producao_prev = previsao["producao_prevista_unid"].sum()
+        producao_ant = base_ant["producao_unid"].sum()
+        rend_prev = (
+            previsao["producao_prevista_unid"].sum() * cfg["kg_por_unidade"] / previsao["capacidade"].sum()
+            if cfg["alvo"] == "rendimento_kg_ha"
+            else producao_prev / previsao["capacidade"].sum()
+        )
+        rend_ant = (
+            base_ant["producao_unid"].sum() * cfg["kg_por_unidade"] / base_ant[cfg["capacidade"]].sum()
+            if cfg["alvo"] == "rendimento_kg_ha"
+            else producao_ant / base_ant[cfg["capacidade"]].sum()
+        )
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(
             f"Produção prevista {ano_prev}",
-            f"{producao_prev / 1e6:.2f} M sc",
+            f"{producao_prev / 1e6:.2f} M {cfg['unidade_producao']}",
             f"{100 * (producao_prev / producao_ant - 1):+.1f}% vs {ultimo_ano}",
         )
-        c2.metric(f"Rendimento médio {ano_prev}", f"{rend_prev:,.0f} kg/ha",
-                  f"{100 * (rend_prev / rend_ant - 1):+.1f}% vs {ultimo_ano}")
+        c2.metric(
+            f"Rendimento médio {ano_prev}",
+            f"{rend_prev:,.2f} {cfg['unidade_alvo']}" if rend_prev < 50 else f"{rend_prev:,.0f} {cfg['unidade_alvo']}",
+            f"{100 * (rend_prev / rend_ant - 1):+.1f}% vs {ultimo_ano}",
+        )
         if metricas is not None:
             linha = metricas.iloc[0]
-            c3.metric("Erro do modelo (validação)", f"{linha['mae_modelo']:,.0f} kg/ha",
-                      f"{100 * (1 - linha['mae_modelo'] / linha['mae_persistencia']):.0f}% melhor que persistência",
-                      delta_color="off")
+            c3.metric(
+                "Erro do modelo (validação)",
+                f"{linha['mae_modelo']:,.2f}" if linha["mae_modelo"] < 50 else f"{linha['mae_modelo']:,.0f}",
+                f"{100 * (1 - linha['mae_modelo'] / linha['mae_persistencia']):.0f}% melhor que persistência",
+                delta_color="off",
+            )
             c4.metric("Observações de treino", f"{int(linha['n_observacoes'])}",
                       str(linha["anos"]), delta_color="off")
         st.caption(
             f"Cobertura: {len(previsao)} EDRs (~"
-            f"{100 * producao_ant / cafe[cafe['ano'] == ultimo_ano]['producao_sc60'].sum():.0f}% "
+            f"{100 * producao_ant / historico_alvo[historico_alvo['ano'] == ultimo_ano]['producao_unid'].sum():.0f}% "
             f"da produção estadual de {ultimo_ano}). Faixas = ±MAE do EDR na validação."
         )
 
@@ -133,48 +163,59 @@ with aba_previsao:
                     geojson=carregar_geojson(),
                     featureidkey="properties.edr_chave",
                     locations=previsao["edr_chave"],
-                    z=previsao["previsto_kg_ha"],
+                    z=previsao["previsto"],
                     colorscale=[[i / (len(RAMPA_AZUL) - 1), c] for i, c in enumerate(RAMPA_AZUL)],
                     marker_line_color="#ffffff",
                     marker_line_width=1.0,
-                    colorbar=dict(title="kg/ha", thickness=12, outlinewidth=0),
-                    hovertemplate="<b>%{location}</b><br>previsto: %{z:,.0f} kg/ha<extra></extra>",
+                    colorbar=dict(title=cfg["unidade_alvo"], thickness=12, outlinewidth=0),
+                    hovertemplate="<b>%{location}</b><br>previsto: %{z:,.2f} "
+                    + cfg["unidade_alvo"] + "<extra></extra>",
                 )
             )
             fig.update_geos(fitbounds="locations", visible=False)
-            fig.update_layout(**MODELO_LAYOUT, title=f"Rendimento previsto {ano_prev} (kg/ha)", height=430)
+            fig.update_layout(
+                **MODELO_LAYOUT,
+                title=f"{cfg['rotulo']} — rendimento previsto {ano_prev} ({cfg['unidade_alvo']})",
+                height=430,
+            )
             st.plotly_chart(fig, use_container_width=True)
 
         with col_barras:
-            ordenado = previsao.sort_values("producao_prevista_sc60", ascending=True).tail(10)
-            reais = base_ant.set_index("edr_chave")["producao_sc60"].reindex(ordenado["edr_chave"])
+            ordenado = previsao.sort_values("producao_prevista_unid", ascending=True).tail(10)
+            reais = (
+                base_ant.set_index("edr_chave")["producao_unid"].reindex(ordenado["edr_chave"])
+            )
             fig = go.Figure()
             fig.add_bar(
                 y=ordenado["edr"], x=reais / 1000, name=f"{ultimo_ano} (IEA)",
                 orientation="h", marker_color=COR["s1"],
-                hovertemplate="<b>%{y}</b> %{x:,.0f} mil sc<extra></extra>",
+                hovertemplate="<b>%{y}</b> %{x:,.0f} mil<extra></extra>",
             )
             fig.add_bar(
-                y=ordenado["edr"], x=ordenado["producao_prevista_sc60"] / 1000,
+                y=ordenado["edr"], x=ordenado["producao_prevista_unid"] / 1000,
                 name=f"{ano_prev} (modelo)", orientation="h", marker_color=COR["s2"],
-                hovertemplate="<b>%{y}</b> %{x:,.0f} mil sc<extra></extra>",
+                hovertemplate="<b>%{y}</b> %{x:,.0f} mil<extra></extra>",
             )
             fig.update_layout(
                 **MODELO_LAYOUT, barmode="group", bargap=0.25,
-                title="Produção por EDR (mil sacas) — top 10",
+                title=f"Produção por EDR (mil {cfg['unidade_producao']}) — top 10",
                 legend=dict(orientation="h", y=1.08), height=430,
             )
             st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("Tabela por EDR")
         tabela = previsao[
-            ["edr", "rendimento_a1", "previsto_kg_ha", "mae_kg_ha", "area_ha",
-             "producao_prevista_sc60", "anom_florada_pct", "tmin_inverno_anterior"]
+            ["edr", "rendimento_a1", "previsto", "mae", "capacidade",
+             "producao_prevista_unid", "anom_critica_pct", "tmin_fria"]
         ].rename(columns={
-            "edr": "EDR", "rendimento_a1": f"rend. {ano_prev - 1} (kg/ha)",
-            "previsto_kg_ha": f"previsto {ano_prev} (kg/ha)", "mae_kg_ha": "±MAE",
-            "area_ha": "área (ha)", "producao_prevista_sc60": "produção prevista (sc)",
-            "anom_florada_pct": "anomalia florada (%)", "tmin_inverno_anterior": "T mín. inverno ant. (°C)",
+            "edr": "EDR",
+            "rendimento_a1": f"rend. {ano_prev - 1} ({cfg['unidade_alvo']})",
+            "previsto": f"previsto {ano_prev} ({cfg['unidade_alvo']})",
+            "mae": "±MAE",
+            "capacidade": "área (ha)" if cfg["capacidade"] == "area_producao_ha" else "pés em produção",
+            "producao_prevista_unid": f"produção prevista ({cfg['unidade_producao']})",
+            "anom_critica_pct": "anomalia chuva janela crítica (%)",
+            "tmin_fria": "T mín. janela fria (°C)",
         })
         st.dataframe(tabela, use_container_width=True, hide_index=True)
 
@@ -185,74 +226,60 @@ with aba_entenda:
         """
 Duas coisas, em linguagem direta:
 
-1. **Prevê a colheita de café de São Paulo, região por região, meses antes da colheita** — com margem de erro declarada.
-2. **Quando vem geada, mede o estrago em cerca de duas semanas** — meses antes dos levantamentos oficiais de campo.
+1. **Prevê a colheita por região (EDR), meses antes** — café, laranja, amendoim e
+   milho safrinha — com margem de erro declarada.
+2. **Quando vem geada, mede o estrago em cerca de duas semanas** (hoje no café;
+   as demais culturas herdam o método).
 
 Tudo com dados **públicos e gratuitos**: satélite, clima e as estatísticas oficiais do IEA/CATI.
 """
     )
 
-    st.subheader("A ideia em um minuto ☕")
+    st.subheader("A ideia em um minuto")
     st.markdown(
         """
-O cafeeiro é como um atleta que alterna **ano de esforço e ano de descanso** — carrega
-muito numa safra, descansa na seguinte (é a *bienalidade*). Então, para estimar a
-próxima colheita, o sistema pergunta o que um bom agrônomo perguntaria:
+Culturas perenes (café, laranja) são como atletas que alternam **ano de esforço e
+ano de descanso** — a *bienalidade*. Anuais (amendoim, milho safrinha) respondem
+mais ao clima do próprio ciclo. Para estimar a colheita, o sistema pergunta o que
+um bom agrônomo perguntaria:
 
 | Pergunta | Onde o sistema busca a resposta |
 |---|---|
 | Em que fase do ciclo essa região está? | Histórico oficial do IEA (série desde 1983) |
 | A lavoura está verde e vigorosa agora? | Fotos de satélite Sentinel-2 (desde 2017) |
-| Choveu bem na **florada** (set–nov), quando a planta define quantos frutos terá? | Clima diário da NASA, região por região |
-| O inverno passado teve **geada** que machucou as plantas? | Termômetro (NASA) + fotos de satélite |
-| Quanta lavoura existe de pé? | Levantamento de área do IEA |
-| O preço está animando o produtor a investir no trato? | Série de preços do IEA (desde 1948) |
+| Choveu bem na **janela crítica** (florada/plantio)? | Clima diário da NASA, região por região |
+| Teve **geada** no caminho? | Termômetro (NASA) + satélite |
+| Quanta lavoura (ou quantos pés) existe? | Levantamento do IEA |
+| O preço está animando o produtor? | Séries de preço do IEA (desde 1948) |
 
-O modelo aprende, nos 16 anos de histórico, **como essas respostas se combinavam com a
-colheita que de fato aconteceu** — e aplica o padrão ao ano atual.
+O modelo aprende, no histórico, **como essas respostas se combinavam com a colheita
+que de fato aconteceu** — e aplica o padrão ao ano atual.
 """
     )
 
     st.subheader('Como sabemos que funciona? A "prova dos anos escondidos"')
     st.markdown(
         """
-Não avaliamos o modelo no dado que ele decorou — fazemos uma prova de verdade:
-
 > **Escondemos um ano inteiro** (digamos, 2015). O modelo treina com todos os outros
-> anos e tem que "adivinhar" 2015 sem nunca tê-lo visto. Corrigimos a prova e anotamos
-> o erro. **Repetimos isso para cada um dos 14 anos.**
+> anos e tem que "adivinhar" 2015 sem nunca tê-lo visto. Corrigimos a prova e
+> anotamos o erro. **Repetimos para cada ano da série.**
 
-Resultado: **196 previsões às cegas**, com erro médio de **~3 sacas por hectare**
-(o rendimento típico é de ~24 sc/ha — erro na casa de 12%). E o modelo erra **menos
-que os dois chutes honestos** possíveis: "repetir o ano passado" e "repetir o último
-ano de mesma fase do ciclo". Se fosse só sorte, ele não venceria os dois, catorze anos seguidos.
+No café: 400 previsões às cegas (2001–2025), erro médio de ~3 sacas/ha. No regime
+climático atual (2012+), o modelo erra **menos que os chutes honestos** ("repetir o
+ano passado" e "repetir o último ano de mesma fase") — especialmente nas regiões
+grandes, que definem a produção do estado. Cada cultura publica os próprios números
+na aba Previsão — inclusive quando a validação ainda é limitada.
 """
     )
 
-    st.subheader("E a geada? O caminho do alerta ao prejuízo ❄️")
+    st.subheader("O que o sistema NÃO faz")
     st.markdown(
         """
-1. **No dia**: o termômetro (dados NASA) acusa madrugada perigosa numa região cafeeira.
-2. **Duas semanas depois**: comparamos as fotos de satélite de **antes e depois**, só
-   nos pixels onde há café (mapa MapBiomas), e medimos quanto do verde queimou —
-   descontando o amarelado normal do inverno, medido nas áreas vizinhas sem café.
-3. **A conta**: % da lavoura danificada → sacas perdidas → **reais**, usando o preço
-   que o produtor recebe.
-
-Esse método foi testado na **geada histórica de julho/2021**: onde fez mais frio, o
-satélite viu mais dano (Ourinhos e Avaré, as mais frias, tiveram 3–4× mais área
-queimada que o normal); onde não gelou, não viu quase nada; e num ano **sem** geada
-(2019), o teste não acusou dano nenhum — ou seja, ele não "inventa" catástrofe.
-"""
-    )
-
-    st.subheader("O que o sistema NÃO faz (tão importante quanto)")
-    st.markdown(
-        """
-- **Não substitui o levantamento oficial** — antecipa e complementa; a palavra final é do IEA/CONAB/IBGE.
-- **Não enxerga talhão individual** — o recorte é regional (EDR); fazenda a fazenda exigiria outro desenho.
-- **Não prevê preço** — usa o preço como contexto, prever mercado é outro problema.
-- **Não acerta na mosca** — entrega número **com margem** (~3 sc/ha). Quem promete precisão absoluta em agricultura não está sendo honesto.
+- **Não substitui o levantamento oficial** — antecipa e complementa.
+- **Não enxerga talhão individual** — o recorte é regional (EDR).
+- **Não prevê preço** — usa preço como contexto.
+- **Não acerta na mosca** — entrega número **com margem**. Quem promete precisão
+  absoluta em agricultura não está sendo honesto.
 """
     )
 
@@ -261,81 +288,91 @@ queimada que o normal); onde não gelou, não viu quase nada; e num ano **sem** 
         """
 | Termo | Tradução |
 |---|---|
-| **EDR** | "Região rural" oficial da CATI — SP tem 40 (Franca, Avaré, Marília…) |
-| **Saca** | 60 kg de café beneficiado — a unidade do mercado |
-| **kg/ha** | Quilos colhidos por hectare de lavoura — a produtividade |
-| **Bienalidade** | O "ano sim, ano não" natural do cafeeiro |
-| **Florada** | Set–nov: quando a chuva define quantos frutos a planta terá |
+| **EDR** | "Região rural" oficial da CATI — SP tem 40 |
+| **Saca / caixa** | Café e milho: sc 60 kg; amendoim: sc 25 kg; laranja: cx 40,8 kg |
+| **cx/pé** | Rendimento da laranja: caixas por árvore (o IEA conta pés, não hectares) |
+| **Bienalidade** | O "ano sim, ano não" natural das perenes |
+| **Janela crítica** | Florada (café/laranja), plantio (amendoim), floração (milho) |
 | **NDVI** | Nota de "quão verde e vigorosa" está a vegetação, vista do espaço |
-| **Margem de erro (MAE)** | O quanto o modelo costuma errar, medido na prova dos anos escondidos |
+| **MAE** | O quanto o modelo costuma errar, medido na prova dos anos escondidos |
 """
     )
 
-# ---------------------------------------------------------------- aba 2
+# ---------------------------------------------------------------- aba séries
 with aba_series:
-    nomes = cafe.sort_values("edr")["edr"].unique().tolist()
-    grandes = cafe.groupby("edr")["producao_sc60"].mean().sort_values(ascending=False)
-    escolhido = st.selectbox("EDR", nomes, index=nomes.index(grandes.index[0]))
-    serie = cafe[cafe["edr"] == escolhido].sort_values("ano")
+    historico_alvo = serie_producao.dropna(subset=[cfg["alvo"]])
+    nomes = historico_alvo.sort_values("edr")["edr"].unique().tolist()
+    grandes = historico_alvo.groupby("edr")["producao_unid"].mean().sort_values(ascending=False)
+    escolhido = st.selectbox("EDR", nomes, index=nomes.index(grandes.index[0]) if len(nomes) else 0)
+    serie = historico_alvo[historico_alvo["edr"] == escolhido].sort_values("ano")
     chave = serie["edr_chave"].iloc[0]
 
     col_a, col_b = st.columns([2, 1])
     with col_a:
         fig = go.Figure()
         fig.add_scatter(
-            x=serie["ano"], y=serie["rendimento_kg_ha"], mode="lines+markers",
+            x=serie["ano"], y=serie[cfg["alvo"]], mode="lines+markers",
             name="rendimento (IEA)", line=dict(color=COR["s1"], width=2),
             marker=dict(size=8),
-            hovertemplate="%{x}: %{y:,.0f} kg/ha<extra></extra>",
+            hovertemplate="%{x}: %{y:,.2f} " + cfg["unidade_alvo"] + "<extra></extra>",
         )
         previsao = dados["previsao"]
         if previsao is not None and chave in set(previsao["edr_chave"]):
             linha = previsao[previsao["edr_chave"] == chave].iloc[0]
             fig.add_scatter(
-                x=[int(linha["ano"])], y=[linha["previsto_kg_ha"]],
-                mode="markers+text", name="previsto (modelo)",
+                x=[int(linha["ano"])], y=[linha["previsto"]],
+                mode="markers", name="previsto (modelo)",
                 marker=dict(color=COR["s2"], size=12, symbol="diamond"),
-                text=[f"{linha['previsto_kg_ha']:,.0f}"], textposition="top center",
-                textfont=dict(color=COR["tinta2"]),
-                error_y=dict(type="data", array=[linha["mae_kg_ha"]], color=COR["s2"], thickness=2),
-                hovertemplate="previsto %{x}: %{y:,.0f} kg/ha<extra></extra>",
+                error_y=dict(type="data", array=[linha["mae"]], color=COR["s2"], thickness=2),
+                hovertemplate="previsto %{x}: %{y:,.2f} " + cfg["unidade_alvo"] + "<extra></extra>",
             )
         fig.update_layout(
-            **MODELO_LAYOUT, title=f"Rendimento — {escolhido} (kg/ha)",
+            **MODELO_LAYOUT,
+            title=f"{cfg['rotulo']} — rendimento em {escolhido} ({cfg['unidade_alvo']})",
             legend=dict(orientation="h", y=1.1), height=380,
         )
         st.plotly_chart(fig, use_container_width=True)
     with col_b:
+        capacidade_rotulo = "mil ha" if cfg["capacidade"] == "area_producao_ha" else "milhões de pés"
+        fator = 1000.0 if cfg["capacidade"] == "area_producao_ha" else 1e6
         fig = go.Figure(
             go.Bar(
-                x=serie["ano"], y=serie["area_producao_ha"] / 1000,
+                x=serie["ano"], y=serie[cfg["capacidade"]] / fator,
                 marker_color=COR["s1"],
-                hovertemplate="%{x}: %{y:,.1f} mil ha<extra></extra>",
+                hovertemplate="%{x}: %{y:,.1f} " + capacidade_rotulo + "<extra></extra>",
             )
         )
-        fig.update_layout(**MODELO_LAYOUT, title="Área em produção (mil ha)", height=380, bargap=0.3)
+        fig.update_layout(
+            **MODELO_LAYOUT,
+            title=("Área em produção" if cfg["capacidade"] == "area_producao_ha" else "Pés em produção")
+            + f" ({capacidade_rotulo})",
+            height=380, bargap=0.3,
+        )
         st.plotly_chart(fig, use_container_width=True)
 
-    fig = go.Figure(
-        go.Scatter(
-            x=preco_cafe["data"], y=preco_cafe["preco"], mode="lines",
-            line=dict(color=COR["s1"], width=2),
-            hovertemplate="%{x|%m/%Y}: R$ %{y:,.0f}/sc<extra></extra>",
+    if not serie_preco.empty:
+        unidade_preco = serie_preco["unidade"].iloc[-1]
+        fig = go.Figure(
+            go.Scatter(
+                x=serie_preco["data"], y=serie_preco["preco"], mode="lines",
+                line=dict(color=COR["s1"], width=2),
+                hovertemplate="%{x|%m/%Y}: R$ %{y:,.2f}<extra></extra>",
+            )
         )
-    )
-    fig.update_layout(
-        **MODELO_LAYOUT, height=300,
-        title="Preço recebido pelo produtor — café secagem natural (R$/sc 60 kg, nominal, estado de SP)",
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(
+            **MODELO_LAYOUT, height=300,
+            title=f"Preço recebido pelo produtor — {cfg['preco_produto']} (R$/{unidade_preco}, nominal)",
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-# ---------------------------------------------------------------- aba 3
+# ---------------------------------------------------------------- aba geada
 with aba_geada:
-    st.subheader("Situação do inverno atual")
+    st.subheader("Situação do inverno atual (café)")
     st.write(
-        "Varredura diária de risco por T2M_MIN (NASA POWER) nos 13 EDRs cafeeiros. "
+        "Varredura diária de risco por T2M_MIN (NASA POWER) nos EDRs cafeeiros. "
         "Rode `scripts/avaliar_geada.py` para atualizar; com severidade ≥ moderada o "
-        "pipeline mede o dano por ΔNDVI (Sentinel-2) sobre as células de café."
+        "pipeline mede o dano por ΔNDVI (Sentinel-2) sobre as células de café. "
+        "Laranja e milho safrinha herdarão o mesmo método (máscaras já geradas para citros)."
     )
     relatorios = sorted((config.PASTA_PROCESSADOS / "relatorios").glob("geada_*.csv"))
     if relatorios:
@@ -345,7 +382,7 @@ with aba_geada:
     else:
         st.info("✅ Inverno de 2026 até 10/08: nenhum evento acima da faixa 'atenção' (mín. 5,9 °C em SJBV, 14/07). Sem medição NDVI necessária.")
 
-    st.subheader("Backtest — geada de julho/2021")
+    st.subheader("Backtest — geada de julho/2021 (café)")
     st.write(
         "Validação do método: dose-resposta térmica confirmada (dano NDVI cresce onde "
         "fez mais frio; placebo 2019 limpo). Perda direta visível por satélite:"
@@ -365,40 +402,42 @@ with aba_geada:
         "(ver relatorios/backtest_geada_jul2021.md)."
     )
 
-# ---------------------------------------------------------------- aba 4
+# ---------------------------------------------------------------- aba metodologia
 with aba_metodo:
     st.markdown(
         """
 ### Fontes (todas gratuitas)
 | Fonte | Papel |
 |---|---|
-| **IEA/CATI — SAAESP** | produção/área por EDR desde 1983 (alvo em kg/ha desde 2001, quando a medida passou de pés para hectares), preços desde 1948, salários e colheita |
+| **IEA/CATI — SAAESP** | produção por EDR desde 1983 (café em kg/ha desde 2001; laranja medida em **pés** desde sempre — por isso o alvo é cx/pé; amendoim = águas + seca somadas), preços desde 1948, salários e colheita |
 | **NASA POWER (MERRA-2)** | clima diário por EDR desde 2000 |
-| **Sentinel-2 (STAC/AWS)** | anomalia de NDVI nas janelas fenológicas (feature do modelo, 2017+) e ΔNDVI de eventos |
-| **MapBiomas Coleção 9** | onde está o café (classe 46, 30 m) |
+| **Sentinel-2 (STAC/AWS)** | anomalia de NDVI nas janelas fenológicas (café e laranja, 2017+) e ΔNDVI de eventos |
+| **MapBiomas Coleção 9** | onde estão as lavouras (classe 46 = café, 47 = citros) |
 | **IBGE PAM/SIDRA** | verdade municipal independente (QA) |
 
-### Modelo (Sistema 2 — nowcast)
+### Modelo (Sistema 2 — nowcast, comum às culturas)
 Gradient boosting (histogramas, aceita dados ausentes) por EDR × ano com features
-**conhecidas até o meio do ano da colheita**: clima por janela fenológica (florada
-set–nov, enchimento dez–mar, geada do inverno anterior), bienalidade (defasagens e
-**âncora bienal** — média das últimas 4 safras de mesma fase, escolhida por vencer o
-baseline nos testes), área em produção, incentivo de preço e **anomalia de NDVI** da
-zona cafeeira mais densa de cada EDR (Sentinel-2, 2017+; ausente antes — o modelo lida).
-**Validação leave-one-year-out** desde 2001: o modelo nunca vê o ano que prevê; erro
-comparado com persistência e média bienal. Faixas de incerteza = MAE por EDR.
+**conhecidas até o meio do ano da colheita**: clima pelas **janelas fenológicas de
+cada cultura** (café/laranja: florada set–nov e enchimento dez–mar; amendoim:
+plantio out–dez e enchimento jan–mar; milho safrinha: fev–abr e abr–jun com geada
+*dentro* do ciclo), defasagens do rendimento + **âncora** (média das safras de mesma
+fase nas perenes; das últimas 3 nas anuais), capacidade (área ou pés), incentivo de
+preço e anomalia de NDVI onde há máscara MapBiomas confiável.
+**Validação leave-one-year-out** por cultura: o modelo nunca vê o ano que prevê;
+erro comparado com persistência e lag-2. Faixas de incerteza = MAE por EDR.
 
-### Sistema 1 — resposta rápida a eventos
+### Sistema 1 — resposta rápida a eventos (café; extensível)
 Detecção de geada no dia (limiar 6 °C na célula ~50 km ≈ 0 °C na relva, calibrado
-em 2021) → ΔNDVI antes/depois restrito ao café, com o não-café como controle da
-senescência → classes agronômicas → sacas e R$. Validado por dose-resposta e placebo.
+em 2021) → ΔNDVI antes/depois restrito à cultura, com o não-cultivo como controle →
+classes agronômicas → sacas e R$. Validado por dose-resposta e placebo no café.
 
 ### Limitações honestas
-- Recorte municipal do IEA é apoio (o próprio IEA o considera menos confiável); a série oficial é por EDR.
-- MapBiomas enxerga ~60% da área de café declarada (30 m perde café novo/sombreado/fragmentado) — usado para *localizar*, não para *quantificar*.
-- A perda pós-geada em sacas usa classes agronômicas com faixa ±50%; a atribuição fina exige o nowcast com covariáveis (seca, poda, bienalidade).
-- Clima em célula de ~50 km suaviza extremos locais (vales frios).
+- Recorte municipal do IEA é apoio; a série oficial é por EDR.
+- MapBiomas enxerga ~60% do café declarado e ~50% dos citros — usado para *localizar*, não *quantificar*.
+- Amendoim e milho safrinha ainda **sem NDVI** (sem classe MapBiomas própria) — clima e histórico carregam o modelo.
+- Perda pós-geada usa classes agronômicas com faixa ±50%.
+- Clima em célula de ~50 km suaviza extremos locais.
 
-*Código: [github.com/tbrena/previsao-safra](https://github.com/tbrena/previsao-safra) (privado).*
+*Código: [github.com/tbrena/previsao-safra](https://github.com/tbrena/previsao-safra).*
 """
     )
