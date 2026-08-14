@@ -19,7 +19,9 @@ import numpy as np
 import pandas as pd
 
 from . import config
-from .dados import geo, iea, power
+
+# Imports pesados (geopandas/GDAL via .dados.geo) ficam locais às funções:
+# o registro CULTURAS precisa ser importável mesmo onde só há pandas.
 
 JANELAS_CLIMA_INICIO = "2000-01-01"
 
@@ -138,6 +140,8 @@ def clima_edr(edr_chave: str, centroide, fim: str) -> pd.DataFrame:
     """Série diária de clima do centroide do EDR, com cache em CSV."""
     pasta = config.PASTA_PROCESSADOS / "clima"
     pasta.mkdir(parents=True, exist_ok=True)
+    from .dados import power
+
     cache = pasta / f"{edr_chave.replace(' ', '_')}.csv"
     if cache.exists():
         serie = pd.read_csv(cache, index_col=0, parse_dates=True)
@@ -206,6 +210,8 @@ def montar_dataset(
     ano_previsao: int | None = None,
 ) -> pd.DataFrame:
     """Dataset (features + alvo na coluna ``alvo``) da cultura escolhida."""
+    from .dados import geo, iea
+
     cfg = CULTURAS[cultura]
     dados = iea.producao_edr(config.PASTA_IEA, cfg["produtos"], cfg["kg_por_unidade"])
     if cfg["alvo"] not in dados.columns:

@@ -16,8 +16,20 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src import config, nowcast
-from src.dados import geo, iea
+# Purga módulos parcialmente importados de reruns anteriores (um import que
+# falha no meio deixa o módulo pela metade no sys.modules — e o rerun seguinte
+# quebraria com AttributeError em vez de mostrar o erro verdadeiro).
+for _nome in [m for m in list(sys.modules) if m == "src" or m.startswith("src.")]:
+    del sys.modules[_nome]
+try:
+    from src import config, nowcast
+    from src.dados import geo, iea
+except Exception:
+    import traceback
+
+    st.error("Falha ao carregar os módulos do projeto — detalhes abaixo:")
+    st.code(traceback.format_exc())
+    st.stop()
 
 # ---------------------------------------------------------------- tokens
 COR = {
