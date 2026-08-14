@@ -46,10 +46,7 @@ data/**
 !data/raw/shapes/
 !data/raw/shapes/**
 !data/processed/
-!data/processed/nowcast_previsao.csv
-!data/processed/nowcast_metricas.csv
-!data/processed/nowcast_loyo.csv
-!data/processed/nowcast_importancias.csv
+!data/processed/nowcast_*.csv
 !data/processed/celulas_*.csv
 !data/processed/ndvi_*.csv
 output/
