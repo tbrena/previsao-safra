@@ -294,9 +294,11 @@ Previsão sem placar é só opinião.
                 delta_color="off",
             )
         st.caption(
-            "Próximo confronto: levantamento do IEA para o ano-safra 2026 "
-            "(previsto para setembro/2026). Os arquivos congelados vivem em "
-            "`previsoes/` no repositório — append-only, com histórico no git."
+            "Próximo confronto: o calendário IEA/CATI faz vários levantamentos ao longo "
+            "do ano-safra; a estimativa final da safra colhida sai tradicionalmente no "
+            "levantamento de setembro e consolida em novembro. O confronto acontece "
+            "quando o export do banco IEA trouxer o ano-safra 2026. Os arquivos "
+            "congelados vivem em `previsoes/` — append-only, com histórico no git."
         )
 
 # ---------------------------------------------------------------- aba entenda
